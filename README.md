@@ -4,10 +4,10 @@
 **Professores:** Izabella Nunes & Jymmy Barreto  
 
 **Equipe:**  
-- Bruno Ribeiro  
-- Ian Nunes  
-- Paulo Portella  
-- Vinicius Petribu  
+- Bruno Ribeiro  (brlla@cesar.school)
+- Ian Nunes  (ibn@cesar.school)
+- Paulo Portella  (phcp@cesar.school)
+- Vinicius Petribu  (vclp@cesar.school)
 
 ---
 
