@@ -1,4 +1,4 @@
-# 🛰️ Embarcados 2025.2  
+# Sist. Embarcados 2025.2  
 ## Projeto Final — Sistemas Embarcados  
 
 **Professores:** Izabella Nunes & Jymmy Barreto  
@@ -11,7 +11,7 @@
 
 ---
 
-## 📌 Visão Geral do Projeto
+##  Visão Geral do Projeto
 Este repositório contém o projeto final da disciplina **Sistemas Embarcados (CESAR School — 2025.2)**.  
 O objetivo principal é desenvolver um sistema **IoT completo**, utilizando **ESP32**, sensores/atuadores e comunicação via **MQTT**, com visualização em tempo real em um dashboard hospedado em um Raspberry Pi.
 
@@ -19,7 +19,7 @@ Nosso projeto consiste em um **sistema de detecção de presença** utilizando *
 
 ---
 
-## 🎯 Objetivos
+##  Objetivos
 - Integrar **ESP32**, sensor PIR e LED via PWM.  
 - Implementar comunicação **Wi-Fi + MQTT**.  
 - Configurar broker **Mosquitto** no Raspberry Pi.  
@@ -28,14 +28,14 @@ Nosso projeto consiste em um **sistema de detecção de presença** utilizando *
 
 ---
 
-## 🧩 Arquitetura do Sistema
+##  Arquitetura do Sistema
 [PIR] → ESP32 → Wi-Fi → MQTT Broker (Raspberry Pi) → Dashboard Web
 ↓
 LED (PWM)
 
 ---
 
-## 🛠️ Hardware Utilizado
+##  Hardware Utilizado
 - 1x ESP32 DevKit v1  
 - 1x Sensor PIR HC-SR501  
 - 1x LED vermelho  
@@ -46,7 +46,7 @@ LED (PWM)
 
 ---
 
-## 💻 Principais Tecnologias
+##  Principais Tecnologias
 - **ESP32 (Arduino Core)**
 - **MQTT (Mosquitto)**
 - **Wi-Fi**
@@ -56,7 +56,7 @@ LED (PWM)
 
 ---
 
-## 📡 Fluxo MQTT
+##  Fluxo MQTT
 **Tópico utilizado:**
 
 casa/sala/presenca
@@ -67,7 +67,7 @@ casa/sala/presenca
 
 ---
 
-## 🔧 Funcionamento do ESP32
+##  Funcionamento do ESP32
 - Lê o movimento do sensor PIR.  
 - Quando há movimento:
   - LED acende com brilho forte (PWM = 255).  
@@ -78,7 +78,8 @@ casa/sala/presenca
 
 ---
 
-## 📂 Estrutura do Repositório
+##  Estrutura do Repositório
+
 /
 ├── esp32-esp8266/ # Código-fonte do ESP32
 ├── raspberry-pi/ # Scripts do broker e dashboard
@@ -88,13 +89,14 @@ casa/sala/presenca
 
 ---
 
-## ▶️ Como executar o projeto
+##  Como executar o projeto
 
 ### 1. Configurar o broker MQTT no Raspberry Pi
 sudo apt update
 sudo apt install mosquitto mosquitto-clients
 sudo systemctl enable mosquitto
-2. Rodar o ESP32
+
+### 2. Rodar o ESP32
 Abra o código na Arduino IDE ou PlatformIO
 
 Configure SSID, senha e IP do broker MQTT
