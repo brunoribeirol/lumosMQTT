@@ -103,7 +103,7 @@ Configure SSID, senha e IP do broker MQTT
 
 Faça o upload para o ESP32
 
-## 3. Testar MQTT (opcional)
+### 3. Testar MQTT (opcional)
 mosquitto_sub -h <IP_DO_RASPBERRY> -t casa/sala/presenca
 
 ## 📊 Dashboard
