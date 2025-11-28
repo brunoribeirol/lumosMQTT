@@ -67,28 +67,36 @@ Estrutura principal:
 
 ```bash
 .
-├── README.md           # Este arquivo (PT-BR)
-├── README_EN.md        # Versão em inglês
+├── README.md                  # Este arquivo (PT-BR)
+├── README_EN.md               # Versão em inglês
+├── docker-compose.yml         # Orquestra mosquitto + backend + frontend
 ├── docs/
-│   └── projeto-embarcados.pdf   # Escopo/descrição fornecida na disciplina
-├── esp32-esp8266/      # Firmware do ESP32 (PlatformIO)
+│   ├── projeto-embarcados.pdf # Escopo/descrição fornecida na disciplina
+│   └── img/
+│       └── dashboard.png      # Screenshot do dashboard
+│       └── dashboard2.png     # Screenshot do dashboard
+├── esp32-esp8266/             # Firmware do ESP32 (PlatformIO)
 │   ├── src/main.cpp
 │   ├── include/env.h
-│   ├── platformio.example.ini  # modelo sem credenciais
-│   └── platformio.ini          # arquivo local criado a partir do exemplo
-├── backend/            # Backend Flask + MQTT + SQLite
+│   ├── platformio.example.ini # Modelo sem credenciais
+│   └── platformio.ini         # Arquivo local criado a partir do exemplo (não versionado)
+├── backend/                   # Backend Flask + MQTT + SQLite
 │   ├── app.py
 │   ├── database.py
 │   ├── mosquitto.conf
 │   ├── requirements.txt
-│   └── templates/index.html (opcional; não é o dashboard principal)
-└── frontend/           # Dashboard web em React + Vite + Tailwind
+│   ├── Dockerfile
+│   ├── .env.example           # Modelo de configuração do backend
+│   └── templates/index.html   # (opcional; não é o dashboard principal)
+└── frontend/                  # Dashboard web em React + Vite + Tailwind
     ├── src/
     │   ├── App.tsx
     │   ├── pages/
     │   └── components/
     ├── package.json
-    └── vite.config.ts
+    ├── vite.config.ts
+    ├── Dockerfile
+    └── .env.example           # Modelo com VITE_API_BASE_URL
 ```
 
 ## 4. Firmware do ESP32 (esp32-esp8266/src/main.cpp)
@@ -145,20 +153,20 @@ Para compilar o projeto em outra máquina, o passo é:
 ```
 
 2. Editar o novo `platformio.ini` e preencher:
-   - `WIFI_SSID` e `WIFI_PASSWORD` com o nome e a senha da sua rede Wi-Fi **(precisa ser 2.4 GHz)**;
+   - `WIFI_SSID` e `WIFI_PASSWORD` com o nome e a senha da sua rede Wi-Fi;
    - `MQTT_SERVER_ADDR` com o **IP da máquina que está rodando o Mosquitto**.  
       Você pode descobrir seu IP local com:
-      ```bash
-      ip addr show
-      ```
-      ou, nas distros compatíveis:
-      ```bash
-      hostname -I
-      ```
-      ou ainda:
-      ```bash
-      ifconfig
-      ```
+     ```bash
+     ip addr show
+     ```
+     ou, nas distros compatíveis:
+     ```bash
+     hostname -I
+     ```
+     ou ainda:
+     ```bash
+     ifconfig
+     ```
    - `MQTT_SERVER_PORT` com a porta do broker (por padrão, `1883`).
 
 > **Importante:** o ESP32 **só se conecta em redes Wi-Fi de 2.4 GHz**.  
@@ -173,7 +181,7 @@ configTime(-3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
 ```
 
 - Se o NTP sincroniza, o timestamp real (epoch) é usado.
-- Se não sincronizar, há fallback para millis()/1000.
+- Se não sincronizar, há fallback para `millis()/1000`.
 
 ### MQTT
 
@@ -186,8 +194,8 @@ Tópicos definidos em `include/env.h`:
 
 Uso real:
 
-- Ao conectar, o ESP32 publica status = "online" em TOPIC_STATUS.
-- A cada nova detecção, publica um evento em TOPIC_MOTION.
+- Ao conectar, o ESP32 publica `status = "online"` em `TOPIC_STATUS`.
+- A cada nova detecção, publica um evento em `TOPIC_MOTION`.
 
 ### Payload publicado
 
@@ -214,7 +222,7 @@ pio run --target upload
 pio device monitor
 ```
 
-Você deve ver linhas como:
+Saída típica:
 
 ```text
 [WiFi] Connected.
@@ -231,7 +239,7 @@ PIR ready!
 
 ### Broker MQTT (Mosquitto)
 
-Arquivo de exemplo `backend/mosquitto.conf`:
+Arquivo `backend/mosquitto.conf`:
 
 ```conf
 # IPv4 – para o ESP32 (rede local)
@@ -243,21 +251,58 @@ listener 1884 ::
 allow_anonymous true
 ```
 
-- ESP32 conecta em MQTT_SERVER_ADDR/MQTT_SERVER_PORT (ex.: 192.168.15.29:1883).
-- Backend Flask, por padrão, conecta em ::1:1884 (localhost IPv6).
+#### Cenário 1 - Tudo local (sem Docker)
 
-Iniciar broker (na pasta `backend/`):
+- ESP32 conecta em `MQTT_SERVER_ADDR:MQTT_SERVER_PORT` (ex.: `192.168.15.29:1883`).
+- Backend Flask, por padrão, pode conectar em `::1:1884` (localhost IPv6) usando:
+
+```bash
+    export MQTT_BROKER="::1"
+    export MQTT_PORT=1884
+    export MQTT_TOPIC_MOTION="lumosMQTT/motion"
+```
+
+Na pasta `backend/`:
 
 ```bash
 mosquitto -c mosquitto.conf
 ```
 
+#### Cenário 2 - Stack com Docker Compose (recomendado)
+
+Quando você usa o `docker-compose.yml` da raiz:
+
+- O serviço `mosquitto` expõe a porta `1883` para o host.
+- O serviço `backend` é configurado via `backend/.env` para usar:
+
+```env
+    MQTT_BROKER=mosquitto
+    MQTT_PORT=1883
+    MQTT_TOPIC_MOTION=lumosMQTT/motion
+```
+
+Ou seja, dentro da rede Docker o backend fala com o broker pelo hostname `mosquitto:1883`.
+
 ### Banco de dados
 
 Arquivo `database.py`:
 
-- Banco: `motion.db` (SQLite).
-- Tabela principal:
+- O backend usa um arquivo SQLite configurado via variável de ambiente `DB_PATH`.
+
+Exemplo de configuração no `.env` (dentro do container):
+
+```env
+  DB_PATH=/app/lumos.db
+```
+
+No `docker-compose.yml`, o arquivo é mapeado do host para o container, por exemplo:
+
+```yaml
+volumes:
+  - ./backend/lumos.db:/app/lumos.db
+```
+
+Tabela principal:
 
 ```sql
 CREATE TABLE IF NOT EXISTS motion_events (
@@ -277,6 +322,37 @@ Funções principais:
 - `get_peak_hour(day)`
 - `get_events_for_day(day)`
 - `get_daily_counts_for_range(start_day, end_day)`
+
+### Variáveis de ambiente (backend/.env)
+
+O backend lê a configuração a partir de um arquivo `.env` na pasta `backend/`.
+
+O repositório inclui um modelo:
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Principais variáveis:
+
+```env
+# MQTT
+MQTT_BROKER=mosquitto        # nome do serviço no Docker Compose
+MQTT_PORT=1883
+MQTT_TOPIC_MOTION=lumosMQTT/motion
+
+# Database (SQLite file inside the container)
+DB_PATH=/app/lumos.db
+
+# Logging
+LOG_LEVEL=INFO
+
+# HTTP Port
+PORT=5050
+```
+
+Ao rodar com Docker Compose, esses valores já são usados automaticamente.
+Para rodar localmente (sem Docker), você pode ajustar `MQTT_BROKER` para o IP/host onde o Mosquitto estiver rodando.
 
 ### Cliente MQTT no backend (app.py)
 
@@ -357,9 +433,25 @@ Exemplo real de resposta:
 }
 ```
 
-### Executando o backend
+### Outros endpoints úteis
 
-Na pasta backend/:
+Além de `/api/metrics`, o backend expõe:
+
+- `GET /api/health`
+
+  - Retorna o status básico do backend e do banco de dados. Útil para health check.
+
+- `GET /api/events?limit=N`
+
+  - Lista os eventos de movimento mais recentes, ordenados do mais novo para o mais antigo.
+  - Usado pelo dashboard para preencher a tabela de Eventos recentes.
+
+- `GET /api/events/export?limit=N`
+  - Exporta os eventos em formato CSV (`text/csv`), permitindo baixar o histórico para análise externa.
+
+### Executando o backend (sem Docker)
+
+Na pasta `backend/`:
 
 ```bash
 python3 -m venv venv
@@ -368,8 +460,8 @@ source venv/bin/activate        # Linux/macOS
 
 pip install -r requirements.txt
 
-export MQTT_BROKER="::1"
-export MQTT_PORT=1884
+cp .env.example .env            # criar arquivo de configuração
+# editar .env se necessário (MQTT_BROKER, DB_PATH etc.)
 
 python app.py
 ```
@@ -386,17 +478,41 @@ Saída típica:
 ## 6. Dashboard Web (`frontend/`)
 
 ![Dashboard lumosMQTT](docs/img/dashboard.png)
+![Dashboard lumosMQTT](docs/img/dashboard2.png)
 
-O dashboard é um SPA em React + Vite + TypeScript + Tailwind, com visual moderno (cards, gráficos, dark theme).
+O dashboard é um SPA em **React + Vite + TypeScript + Tailwind**, com visual moderno (cards, gráficos, dark/light theme).
 
 Ele consome a API do backend:
 
 ```ts
 GET http://localhost:5050/api/metrics
+GET http://localhost:5050/api/events
+GET http://localhost:5050/api/events/export
+GET http://localhost:5050/api/health
 ```
+
+### Variáveis de Ambiente (`frontend/.env`)
+
+O frontend lê a URL base da API a partir do arquivo `.env` na pasta `frontend/`.
+
+```bash
+cp frontend/.env.example frontend/.env
+```
+
+Conteúdo padrão:
+
+```env
+VITE_API_BASE_URL=http://localhost:5050
+```
+
+Se você rodar o backend em outra URL/porta ou em ambiente de produção, basta ajustar esse valor.
 
 ### Principais componentes
 
+- **Header**:
+  - Título do sistema, status de conexão (`Online/Offline`) com base em `/api/health`;
+  - Exibe a última atualização das métricas;
+  - Botão de alternância de tema (light/dark) com persistência em `localStorage` e aplicação na tag `<html>` (`class="dark"`).
 - **Cards de resumo**:
   - Total de detecções;
   - Atividades hoje;
@@ -404,33 +520,75 @@ GET http://localhost:5050/api/metrics
   - Sessões hoje;
   - Horário de pico;
   - Tempo inativo desde a última detecção.
-- **Gráficos**:
+- **Gráficos (Recharts)**:
   - Detecções por dia (últimos 7 dias);
-  - Distribuição horária de hoje (gráfico de barras ou linhas);
+  - Distribuição horária de hoje (gráfico de barras);
   - Tendências vs ontem e vs média semanal.
+- **Tendências**:
+  - Cards mostrando:
+    - Detecções hoje;
+    - Média semanal;
+    - Diferença percentual vs ontem;
+    - Diferença percentual vs média semanal.
+- **Tabela de eventos recentes**:
+  - Lista os últimos eventos de movimento diretamente a partir de `GET /api/events`;
+  - Exibe id, horário (formatado em `pt-BR`) e timestamp bruto;
+  - Inclui botões para exportar o histórico:
+  - Exportar JSON: baixa `motion_events.json` com os dados brutos;
+  - Exportar CSV: baixa `motion_events.csv` pronto para abrir em Excel/Sheets.
 
-### Como executar
+### Como executar (sem Docker)
 
 Na pasta `frontend/`:
 
 ```bash
 # Instalar dependências
-npm install # ou pnpm install / bun install
+npm install      # ou pnpm install / bun install
 
 # Rodar em modo desenvolvimento
 npm run dev
 ```
 
 O Vite normalmente sobe na porta `5173` (ou similar).
+
 No navegador, acesse:
 
 ```text
 http://localhost:5173
 ```
 
-Certifique-se de que o backend Flask esteja rodando em `http://localhost:5050` para que as chamadas à API funcionem.
+Certifique-se de que o backend Flask esteja rodando em `http://localhost:5050` e que `VITE_API_BASE_URL` no .env aponta para essa URL.
 
-## 7. Execução End-to-End (resumo)
+## 7. Execução com Docker (recomendado)
+
+O repositório inclui um `docker-compose.yml` na raiz que sobe toda a stack:
+
+- `mosquitto` – broker MQTT;
+- `lumos-backend` – backend Flask + SQLite;
+- `lumos-frontend` – dashboard React servido por Nginx.
+
+Na raiz do projeto:
+
+```bash
+docker compose build
+docker compose up
+```
+
+Serviços e portas:
+
+- Mosquitto: porta `1883` no host;
+- Backend Flask: porta `5050` no host (`http://localhost:5050`);
+- Frontend (Nginx + build do React): porta `5173` no host (`http://localhost:5173`).
+
+Acesse o dashboard em:
+
+```text
+http://localhost:5173
+```
+
+> Certifique-se de que o ESP32 esteja configurado para apontar `MQTT_SERVER_ADDR` para o IP da máquina onde o Docker está rodando (porta `1883`).
+
+## 7. Execução End-to-End (modo manuel, sem Docker)
 
 1. Subir o **broker MQTT**
    - Na pasta `backend/`:
@@ -442,17 +600,25 @@ Certifique-se de que o backend Flask esteja rodando em `http://localhost:5050` p
 2. Iniciar o **backend Flask**
 
 ```bash
-    cd backend
-    source venv/bin/activate
-    python app.py
+  cd backend
+  python3 -m venv venv
+  source venv/bin/activate         # Linux/macOS
+  # venv\Scripts\activate          # Windows
+
+  cp .env.example .env             # se ainda não existir
+  # editar .env se necessário (MQTT_BROKER, DB_PATH etc.)
+
+  python app.py
 ```
 
 3. Subir o **dashboard**
 
 ```bash
-    cd frontend
-    npm install
-    npm run dev
+  cd frontend
+  cp .env.example .env             # garantir VITE_API_BASE_URL correta
+  npm install
+  npm run dev
+
 ```
 
 4. Ligar o ESP32
@@ -464,30 +630,32 @@ Certifique-se de que o backend Flask esteja rodando em `http://localhost:5050` p
 
 - Movimentar-se em frente ao sensor PIR.
 - Observar:
-
   - logs no Serial do ESP32;
   - linhas de `Stored motion event...` no backend;
   - atualização em tempo real no dashboard.
 
-## 8. Como o projeto atende aos requisitos da disciplina
+## 9. Como o projeto atende aos requisitos da disciplina
 
-- Microcontrolador: ESP32 usado como plataforma principal, com código em C++/Arduino e utilização de FreeRTOS tasks.
-- Sensores e atuadores: sensor PIR para presença e LED controlado por PWM para atuação visual/iluminação.
-- Comunicação: uso de Wi-Fi e protocolo MQTT para integração com servidor externo.
-- Servidor e persistência: backend em Flask conectado a um broker Mosquitto, com persistência em SQLite.
-- Métricas e análise: cálculo de sessões de presença, tempo ocioso, distribuição horária e economia de energia.
-- Interface gráfica: dashboard web dedicado, em React, apresentando métricas em tempo real.
-- Organização profissional: repositório estruturado por módulos (`esp32-esp8266`, `backend`, `frontend`, `docs`), código comentado e README detalhado.
+- **Microcontrolador**: ESP32 usado como plataforma principal, com código em C++/Arduino e utilização de FreeRTOS tasks.
+- **Sensores e atuadores**: sensor PIR para presença e LED controlado por PWM para atuação visual/iluminação.
+- **Comunicação**: uso de Wi-Fi e protocolo MQTT para integração com servidor externo.
+- **Servidor e persistência**: backend em Flask conectado a um broker Mosquitto, com persistência em SQLite.
+- **Métricas e análise**: cálculo de sessões de presença, tempo ocioso, distribuição horária e economia de energia.
+- **Interface gráfica**: dashboard web dedicado, em React, apresentando métricas em tempo real.
+- **Organização profissional**: repositório estruturado por módulos (`esp32-esp8266`, `backend`, `frontend`, `docs`), código comentado, uso de `.env/.env.example`, Dockerfiles e README detalhado.
 
-## 9. Melhorias Futuras
+## 10. Melhorias Futuras
 
 - Adicionar sensor de luminosidade (LDR) para combinar presença + luz ambiente.
 - Criar alertas (e-mail, Telegram, etc.) para atividade fora de horário.
 - Implementar autenticação no MQTT (usuário/senha, TLS) para ambiente de produção.
-- Expor histórico completo com filtros por data e exportação em CSV/JSON.
+- Melhorar o histórico de eventos com filtros por data/faixa de horário na API e no dashboard (a exportação em CSV/JSON já está disponível na versão atual).
 - Permitir ajuste remoto de parâmetros (janela de movimento, brilho, limites de sessão).
+- Criar um “web flasher” para o ESP32 (via ESP Web Flasher ou esptool.py + script) permitindo gravar o firmware diretamente pelo navegador.
 
-## 10. Licença
+## 11. Licença
+
+Este projeto está licenciado sob os termos da licença MIT – veja o arquivo [LICENSE](LICENSE) para mais detalhes.
 
 - Projeto acadêmico desenvolvido para a disciplina de Sistemas Embarcados da CESAR School.
 - O código pode ser reutilizado para fins educacionais, com os devidos créditos aos autores.
