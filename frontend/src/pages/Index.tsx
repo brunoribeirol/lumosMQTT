@@ -129,6 +129,14 @@ const getDayLabels = (): string[] => {
   return labels;
 };
 
+// evita erro de .toFixed() em null/undefined
+const safePercent = (value: number | null | undefined): string => {
+  if (value === null || value === undefined) return "N/A";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "N/A";
+  return `${num.toFixed(1)}%`;
+};
+
 // Components
 const Header = ({
   lastUpdate,
@@ -528,6 +536,9 @@ const Index = () => {
     value: metrics.hourlyDistribution[hourKey],
   }));
 
+  const weekAverageValue = Number(metrics.trends.weekAverage || 0);
+  const energyUsedWhValue = Number(metrics.energyMetrics.energyUsedWh ?? 0);
+
   return (
     <div className="min-h-screen bg-background p-4 md:p-8 transition-colors duration-300">
       <div className="max-w-7xl mx-auto">
@@ -553,17 +564,15 @@ const Index = () => {
           />
           <MetricCard
             title="Energia Economizada"
-            value={`${metrics.energyMetrics.energySavedPercent.toFixed(1)}%`}
-            subtitle={`${metrics.energyMetrics.energyUsedWh.toFixed(
-              2
-            )} Wh consumidos`}
+            value={safePercent(metrics.energyMetrics.energySavedPercent)}
+            subtitle={`${energyUsedWhValue.toFixed(2)} Wh consumidos`}
             icon={Zap}
           />
           <MetricCard
             title="Sessões Hoje"
             value={metrics.sessionsToday.count}
             subtitle={`Duração média: ${formatDuration(
-              metrics.sessionsToday.averageDurationSeconds
+              metrics.sessionsToday.averageDurationSeconds ?? 0
             )}`}
             icon={Users}
           />
@@ -679,26 +688,18 @@ const Index = () => {
             />
             <TrendItem
               label="vs Média Semanal"
-              value={
-                metrics.trends.deltaVsWeekPercent !== null
-                  ? `${metrics.trends.deltaVsWeekPercent.toFixed(1)}%`
-                  : "N/A"
-              }
+              value={safePercent(metrics.trends.deltaVsWeekPercent)}
               trend={metrics.trends.deltaVsWeekPercent}
             />
             <TrendItem
               label="vs Ontem"
-              value={
-                metrics.trends.deltaVsYesterdayPercent !== null
-                  ? `${metrics.trends.deltaVsYesterdayPercent.toFixed(1)}%`
-                  : "N/A"
-              }
+              value={safePercent(metrics.trends.deltaVsYesterdayPercent)}
               trend={metrics.trends.deltaVsYesterdayPercent}
             />
             <TrendItem
-              label="vs Média Semanal"
-              value={`${metrics.trends.deltaVsWeekPercent.toFixed(1)}%`}
-              trend={metrics.trends.deltaVsWeekPercent}
+              label="Média Semanal"
+              value={weekAverageValue.toFixed(1)}
+              suffix="detecções/dia"
             />
           </div>
         </div>
