@@ -9,16 +9,19 @@ esp32-esp8266/platformio.ini
 backend/venv/
 backend/__pycache__/
 backend/*.pyc
-backend/motion.db
+backend/lumos.db
 backend/*.log
+backend/.env
 
 # --- Frontend React ---
 frontend/node_modules/
 frontend/dist/
+frontend/.vite/
+frontend/.env
 
-# --- Tests? ---
+# --- Tests ---
 test/
 
-# --- Generak ---
+# --- General ---
 .DS_Store
 *.log
