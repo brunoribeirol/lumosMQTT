@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 222 47% 11%;
+    --foreground: 158 64% 95%;
+
+    --card: 217 33% 17%;
+    --card-foreground: 158 64% 95%;
+
+    --popover: 217 33% 17%;
+    --popover-foreground: 158 64% 95%;
+
+    --primary: 158 64% 52%;
+    --primary-foreground: 222 47% 11%;
+
+    --secondary: 173 58% 39%;
+    --secondary-foreground: 158 64% 95%;
+
+    --muted: 215 25% 27%;
+    --muted-foreground: 217 11% 65%;
+
+    --accent: 174 72% 56%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 158 64% 95%;
+
+    --border: 215 20% 25%;
+    --input: 215 20% 25%;
+    --ring: 158 64% 52%;
+
+    --radius: 0.75rem;
+    
+    --gradient-primary: linear-gradient(135deg, hsl(158 64% 52%) 0%, hsl(173 58% 39%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(174 72% 56%) 0%, hsl(158 64% 52%) 100%);
+    --gradient-dark: linear-gradient(135deg, hsl(222 47% 11%) 0%, hsl(217 33% 17%) 100%);
+    
+    --shadow-glow: 0 0 40px hsl(158 64% 52% / 0.2);
+    --shadow-card: 0 4px 16px hsl(0 0% 0% / 0.4);
+    
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .pulse-green {
+    animation: pulse-green 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  
+  @keyframes pulse-green {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+}
