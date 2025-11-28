@@ -14,7 +14,21 @@ import {
   LucideIcon,
   BarChart3,
   LineChart as LineChartIcon,
+  Sun,
+  Moon,
 } from "lucide-react";
+
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+} from "recharts";
 
 // Types
 interface MetricsData {
@@ -35,16 +49,34 @@ interface MetricsData {
     maxDurationSeconds: number;
   };
   idleMetrics: {
-    lastEventAgeSeconds: number;
+    lastEventAgeSeconds: number | null;
     maxIdleSeconds: number;
   };
   trends: {
     todayCount: number;
     weekAverage: number;
     deltaVsYesterdayPercent: number | null;
-    deltaVsWeekPercent: number;
+    deltaVsWeekPercent: number | null;
   };
 }
+
+interface MotionEvent {
+  id: number;
+  timestamp: number;
+  datetimeIso: string;
+  hour: number;
+  day: string;
+}
+
+interface HealthStatus {
+  status: string;
+  details: {
+    db?: string;
+    mqtt?: string;
+  };
+}
+
+type Theme = "light" | "dark";
 
 // Utility functions
 const formatTime = (date: Date): string => {
@@ -62,7 +94,8 @@ const formatDuration = (seconds: number): string => {
   return `${minutes}m ${remainingSeconds}s`;
 };
 
-const formatIdleTime = (seconds: number): string => {
+const formatIdleTime = (seconds: number | null): string => {
+  if (seconds === null) return "N/A";
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m`;
@@ -71,9 +104,28 @@ const formatIdleTime = (seconds: number): string => {
   return `${hours}h ${remainingMinutes}m`;
 };
 
+const formatDateTime = (isoString: string): string => {
+  return new Date(isoString).toLocaleString("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "medium",
+  });
+};
+
 const getDayLabels = (): string[] => {
-  const labels = ["Hoje"];
-  for (let i = 1; i < 7; i++) labels.push(`D-${i}`);
+  const labels: string[] = [];
+  const today = new Date();
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    labels.push(
+      d.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+      })
+    );
+  }
+
   return labels;
 };
 
@@ -81,9 +133,13 @@ const getDayLabels = (): string[] => {
 const Header = ({
   lastUpdate,
   isOnline,
+  theme,
+  onToggleTheme,
 }: {
   lastUpdate: string;
   isOnline: boolean;
+  theme: Theme;
+  onToggleTheme: () => void;
 }) => (
   <header className="glass-card rounded-2xl p-6 mb-6 shadow-card">
     <div className="flex items-center justify-between flex-wrap gap-4">
@@ -100,7 +156,26 @@ const Header = ({
           </p>
         </div>
       </div>
+
       <div className="flex items-center gap-4">
+        <button
+          type="button"
+          onClick={onToggleTheme}
+          className="glass-card rounded-lg p-2 flex items-center gap-2 hover:shadow-glow transition"
+        >
+          {theme === "dark" ? (
+            <>
+              <Sun className="w-4 h-4" />
+              <span className="text-xs text-muted-foreground">Modo claro</span>
+            </>
+          ) : (
+            <>
+              <Moon className="w-4 h-4" />
+              <span className="text-xs text-muted-foreground">Modo escuro</span>
+            </>
+          )}
+        </button>
+
         <div className="flex items-center gap-2 px-4 py-2 glass-card rounded-lg">
           <div
             className={`w-2.5 h-2.5 rounded-full ${
@@ -144,97 +219,6 @@ const MetricCard = ({
     {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
   </div>
 );
-
-const SimpleBarChart = ({
-  data,
-  labels,
-}: {
-  data: number[];
-  labels: string[];
-}) => {
-  const maxValue = Math.max(...data, 1);
-  return (
-    <div className="flex items-end justify-between gap-2 h-full px-2">
-      {data.map((value, index) => {
-        const height = (value / maxValue) * 100;
-        return (
-          <div key={index} className="flex flex-col items-center flex-1 gap-2">
-            <div
-              className="w-full bg-muted rounded-t-lg relative"
-              style={{ height: `${Math.max(height, 4)}%` }}
-            >
-              <div className="absolute inset-0 bg-gradient-primary rounded-t-lg opacity-80" />
-            </div>
-            <span className="text-xs text-muted-foreground">
-              {labels[index]}
-            </span>
-            <span className="text-xs font-medium text-foreground">{value}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-const SimpleLineChart = ({
-  data,
-  labels,
-}: {
-  data: number[];
-  labels: string[];
-}) => {
-  const maxValue = Math.max(...data, 1);
-  const points = data.map((value, index) => ({
-    x: (index / (data.length - 1)) * 100,
-    y: 100 - (value / maxValue) * 80,
-  }));
-
-  const pathData = points
-    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
-    .join(" ");
-
-  return (
-    <div className="relative h-full">
-      <svg
-        className="w-full h-full"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-      >
-        <defs>
-          <linearGradient id="lineGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="hsl(158 64% 52%)" stopOpacity="0.3" />
-            <stop
-              offset="100%"
-              stopColor="hsl(158 64% 52%)"
-              stopOpacity="0.05"
-            />
-          </linearGradient>
-        </defs>
-        <path d={`${pathData} L 100 100 L 0 100 Z`} fill="url(#lineGradient)" />
-        <path
-          d={pathData}
-          stroke="hsl(158 64% 52%)"
-          strokeWidth="0.5"
-          fill="none"
-        />
-        {points.map((point, index) => (
-          <circle
-            key={index}
-            cx={point.x}
-            cy={point.y}
-            r="1"
-            fill="hsl(158 64% 52%)"
-          />
-        ))}
-      </svg>
-      <div className="absolute bottom-0 left-0 right-0 flex justify-between px-2 text-xs text-muted-foreground">
-        {labels.map((label, index) => (
-          <span key={index}>{label}</span>
-        ))}
-      </div>
-    </div>
-  );
-};
 
 const ChartCard = ({
   title,
@@ -330,18 +314,88 @@ const ErrorCard = ({ message }: { message: string }) => (
   </div>
 );
 
+const RecentEventsCard = ({
+  events,
+  onExportCsv,
+  onExportJson,
+}: {
+  events: MotionEvent[];
+  onExportCsv: () => void;
+  onExportJson: () => void;
+}) => (
+  <div className="glass-card rounded-xl p-6 shadow-card">
+    <div className="flex items-center justify-between mb-4">
+      <h3 className="text-lg font-semibold text-foreground">
+        Eventos recentes
+      </h3>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onExportJson}
+          className="text-xs px-3 py-1 rounded-full border border-primary/40 text-primary hover:bg-primary/10 transition-colors"
+        >
+          Exportar JSON
+        </button>
+        <button
+          type="button"
+          onClick={onExportCsv}
+          className="text-xs px-3 py-1 rounded-full border border-primary/40 text-primary hover:bg-primary/10 transition-colors"
+        >
+          Exportar CSV
+        </button>
+      </div>
+    </div>
+    {events.length === 0 ? (
+      <p className="text-sm text-muted-foreground">
+        Nenhum evento registrado ainda.
+      </p>
+    ) : (
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs text-muted-foreground border-b border-border">
+              <th className="py-2 pr-4 text-left">#</th>
+              <th className="py-2 pr-4 text-left">Horário</th>
+              <th className="py-2 text-left">Timestamp</th>
+            </tr>
+          </thead>
+          <tbody>
+            {events.map((ev) => (
+              <tr
+                key={ev.id}
+                className="border-b border-border/40 last:border-0"
+              >
+                <td className="py-2 pr-4 text-muted-foreground">{ev.id}</td>
+                <td className="py-2 pr-4 font-mono text-xs">
+                  {formatDateTime(ev.datetimeIso)}
+                </td>
+                <td className="py-2 font-mono text-xs text-muted-foreground">
+                  {ev.timestamp}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+);
+
 // Main Component
 const Index = () => {
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
+  const [recentEvents, setRecentEvents] = useState<MotionEvent[]>([]);
   const [lastUpdate, setLastUpdate] = useState<string>("--:--:--");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [theme, setTheme] = useState<Theme>("dark");
+  const [isOnline, setIsOnline] = useState<boolean>(false);
+
+  const apiBase = import.meta.env.VITE_API_BASE_URL;
 
   const loadMetrics = async () => {
     try {
-      const response = await axios.get<MetricsData>(
-        "http://localhost:5050/api/metrics"
-      );
+      const response = await axios.get<MetricsData>(`${apiBase}/api/metrics`);
       setMetrics(response.data);
       setLastUpdate(formatTime(new Date()));
       setError(null);
@@ -352,10 +406,104 @@ const Index = () => {
     }
   };
 
+  const loadRecentEvents = async () => {
+    try {
+      const response = await axios.get<MotionEvent[]>(
+        `${apiBase}/api/events?limit=10`
+      );
+      setRecentEvents(response.data);
+    } catch (err) {
+      console.error("Erro ao carregar eventos recentes:", err);
+    }
+  };
+
+  const loadHealth = async () => {
+    try {
+      const response = await axios.get<HealthStatus>(`${apiBase}/api/health`);
+      setIsOnline(response.data.status === "ok");
+    } catch (err) {
+      console.error("Erro ao carregar healthcheck:", err);
+      setIsOnline(false);
+    }
+  };
+
+  const handleExportCsv = async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/events/export?limit=1000`);
+      if (!res.ok) {
+        throw new Error("Falha ao exportar CSV");
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "motion_events.csv";
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao exportar CSV");
+    }
+  };
+
+  const handleExportJson = async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/events?limit=1000`);
+      if (!res.ok) {
+        throw new Error("Falha ao exportar JSON");
+      }
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "motion_events.json";
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao exportar JSON");
+    }
+  };
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  };
+
+  // Load theme from localStorage
   useEffect(() => {
-    loadMetrics();
-    const interval = setInterval(loadMetrics, 3000);
+    const stored = window.localStorage.getItem("theme");
+    if (stored === "light" || stored === "dark") {
+      setTheme(stored);
+    }
+  }, []);
+
+  // Apply theme class to <html> and persist
+  useEffect(() => {
+    const root = window.document.documentElement;
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+    window.localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  // Poll metrics, events and health
+  useEffect(() => {
+    const loadAll = () => {
+      loadMetrics();
+      loadRecentEvents();
+      loadHealth();
+    };
+
+    loadAll();
+    const interval = setInterval(loadAll, 3000);
+
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (isLoading) return <LoadingSpinner />;
@@ -363,16 +511,32 @@ const Index = () => {
     return <ErrorCard message={error || "Dados não disponíveis"} />;
 
   const dayLabels = getDayLabels();
+
+  const detectionsByDayData = dayLabels.map((label, index) => {
+    const reversedIndex = metrics.detectionsByDay.length - 1 - index;
+    return {
+      label,
+      value: metrics.detectionsByDay[reversedIndex] ?? 0,
+    };
+  });
+
   const hourlyKeys = Object.keys(metrics.hourlyDistribution).sort(
     (a, b) => parseInt(a) - parseInt(b)
   );
-  const hourlyLabels = hourlyKeys.map((h) => `${h}h`);
-  const hourlyValues = hourlyKeys.map((h) => metrics.hourlyDistribution[h]);
+  const hourlyData = hourlyKeys.map((hourKey) => ({
+    hour: `${hourKey}h`,
+    value: metrics.hourlyDistribution[hourKey],
+  }));
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
+    <div className="min-h-screen bg-background p-4 md:p-8 transition-colors duration-300">
       <div className="max-w-7xl mx-auto">
-        <Header lastUpdate={lastUpdate} isOnline={!error} />
+        <Header
+          lastUpdate={lastUpdate}
+          isOnline={isOnline}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+        />
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
           <MetricCard
@@ -419,13 +583,88 @@ const Index = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <ChartCard title="Detecções por Dia" icon={LineChartIcon}>
-            <SimpleLineChart
-              data={metrics.detectionsByDay}
-              labels={dayLabels}
-            />
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={detectionsByDayData}
+                margin={{ top: 10, right: 20, left: -20, bottom: 0 }}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  strokeOpacity={0.1}
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="label"
+                  stroke="hsl(215 20% 65%)"
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis
+                  stroke="hsl(215 20% 65%)"
+                  tickLine={false}
+                  axisLine={false}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(222 47% 11%)",
+                    border: "1px solid hsl(217 19% 27%)",
+                    borderRadius: "0.5rem",
+                    color: "white",
+                    fontSize: "0.75rem",
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke="hsl(158 64% 52%)"
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
           </ChartCard>
+
           <ChartCard title="Distribuição Horária Hoje" icon={BarChart3}>
-            <SimpleBarChart data={hourlyValues} labels={hourlyLabels} />
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={hourlyData}
+                margin={{ top: 10, right: 20, left: -20, bottom: 0 }}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  strokeOpacity={0.1}
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="hour"
+                  stroke="hsl(215 20% 65%)"
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis
+                  stroke="hsl(215 20% 65%)"
+                  tickLine={false}
+                  axisLine={false}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(222 47% 11%)",
+                    border: "1px solid hsl(217 19% 27%)",
+                    borderRadius: "0.5rem",
+                    color: "white",
+                    fontSize: "0.75rem",
+                  }}
+                />
+                <Bar
+                  dataKey="value"
+                  fill="hsl(158 64% 52%)"
+                  radius={[6, 6, 0, 0]}
+                />
+              </BarChart>
+            </ResponsiveContainer>
           </ChartCard>
         </div>
 
@@ -439,8 +678,13 @@ const Index = () => {
               value={metrics.trends.todayCount}
             />
             <TrendItem
-              label="Média Semanal"
-              value={metrics.trends.weekAverage.toFixed(1)}
+              label="vs Média Semanal"
+              value={
+                metrics.trends.deltaVsWeekPercent !== null
+                  ? `${metrics.trends.deltaVsWeekPercent.toFixed(1)}%`
+                  : "N/A"
+              }
+              trend={metrics.trends.deltaVsWeekPercent}
             />
             <TrendItem
               label="vs Ontem"
@@ -457,6 +701,14 @@ const Index = () => {
               trend={metrics.trends.deltaVsWeekPercent}
             />
           </div>
+        </div>
+
+        <div className="mt-6">
+          <RecentEventsCard
+            events={recentEvents}
+            onExportCsv={handleExportCsv}
+            onExportJson={handleExportJson}
+          />
         </div>
       </div>
     </div>
