@@ -6,6 +6,10 @@
 // MQTT_SERVER_ADDR
 // MQTT_SERVER_PORT
 
+// MQTT_USERNAME
+// MQTT_PASSWORD
+
 // MQTT topics
 #define TOPIC_STATUS   "lumosMQTT/status"
 #define TOPIC_MOTION   "lumosMQTT/motion"
+#define TOPIC_COMMANDS "lumosMQTT/commands"

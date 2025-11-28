@@ -102,17 +102,22 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
 void connectMQTT() {
     while (!mqttClient.connected()) {
-        Serial.print("[MQTT] Connecting to broker... ");
+        Serial.print("[MQTT] Connecting to broker ");
+        Serial.print(MQTT_SERVER_ADDR);
+        Serial.print(":");
+        Serial.print(MQTT_SERVER_PORT);
+        Serial.println(" ...");
 
         String clientId = "lumosMQTT-esp32-";
         clientId += String(random(0xFFFF), HEX);
 
-        if (mqttClient.connect(clientId.c_str())) {
-            Serial.println("connected.");
+        // CloudAMQP/LavinMQ: precisa de usuário e senha
+        if (mqttClient.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
+            Serial.println("[MQTT] Connected.");
             mqttClient.subscribe(TOPIC_COMMANDS);
             mqttClient.publish(TOPIC_STATUS, "online", true);
         } else {
-            Serial.print("failed, rc=");
+            Serial.print("[MQTT] Failed, rc=");
             Serial.print(mqttClient.state());
             Serial.println(" — retrying in 2 seconds");
             delay(2000);
