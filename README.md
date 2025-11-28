@@ -73,8 +73,8 @@ Estrutura principal:
 ├── docs/
 │   ├── projeto-embarcados.pdf # Escopo/descrição fornecida na disciplina
 │   └── img/
-│       └── dashboard.png      # Screenshot do dashboard
-│       └── dashboard2.png     # Screenshot do dashboard
+│       ├── dashboard.png      # Screenshot do dashboard
+│       └── dashboard2.png     # Screenshot do dashboard (variação)
 ├── esp32-esp8266/             # Firmware do ESP32 (PlatformIO)
 │   ├── src/main.cpp
 │   ├── include/env.h
@@ -477,8 +477,8 @@ Saída típica:
 
 ## 6. Dashboard Web (`frontend/`)
 
-![Dashboard lumosMQTT](docs/img/dashboard.png)
-![Dashboard lumosMQTT](docs/img/dashboard2.png)
+![Dashboard lumosMQTT – visão geral](docs/img/dashboard.png)
+![Dashboard lumosMQTT – tabela de eventos e detalhes](docs/img/dashboard2.png)
 
 O dashboard é um SPA em **React + Vite + TypeScript + Tailwind**, com visual moderno (cards, gráficos, dark/light theme).
 
@@ -572,13 +572,15 @@ Na raiz do projeto:
 ```bash
 docker compose build
 docker compose up
+## ou
+docker-compose up --build
 ```
 
 Serviços e portas:
 
-- Mosquitto: porta `1883` no host;
-- Backend Flask: porta `5050` no host (`http://localhost:5050`);
-- Frontend (Nginx + build do React): porta `5173` no host (`http://localhost:5173`).
+- Mosquitto (MQTT): `localhost:1883`
+- Backend Flask: `http://localhost:5050`
+- Frontend (Nginx + build do React): `http://localhost:5173`
 
 Acesse o dashboard em:
 
@@ -586,9 +588,16 @@ Acesse o dashboard em:
 http://localhost:5173
 ```
 
+Antes de rodar pela primeira vez:
+
+```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+```
+
 > Certifique-se de que o ESP32 esteja configurado para apontar `MQTT_SERVER_ADDR` para o IP da máquina onde o Docker está rodando (porta `1883`).
 
-## 7. Execução End-to-End (modo manuel, sem Docker)
+## 8. Execução End-to-End (modo manuel, sem Docker)
 
 1. Subir o **broker MQTT**
    - Na pasta `backend/`:
