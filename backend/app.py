@@ -27,10 +27,12 @@ from database import (
 # Configuration
 # -----------------------------------------------------------------------------
 
-# MQTT broker (Mosquitto).
-# Default for local dev; Docker overrides via env (mosquitto, 1883).
-MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
+# MQTT broker (CloudMQP / LavinMQ or similar).
+# These values are provided via environment variables in Render.
+MQTT_BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_USERNAME = os.getenv("MQTT_USERNAME")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 
 # Topic used by the ESP32 to send motion events
 MQTT_TOPIC_MOTION = os.getenv("MQTT_TOPIC_MOTION", "lumosMQTT/motion")
@@ -70,7 +72,7 @@ def on_connect(client: mqtt.Client, userdata, flags, rc):
     Subscribes to the motion events topic.
     """
     if rc == 0:
-        logger.info("Connected to MQTT broker %s:%s", MQTT_BROKER, MQTT_PORT)
+        logger.info("Connected to MQTT broker %s:%s", MQTT_BROKER_HOST, MQTT_PORT)
         client.subscribe(MQTT_TOPIC_MOTION)
         logger.info("Subscribed to motion topic: %s", MQTT_TOPIC_MOTION)
     else:
@@ -134,11 +136,24 @@ def start_mqtt_client() -> None:
     This is meant to run in a background thread.
     """
     client = mqtt.Client()
+
+    # If the broker requires authentication (CloudAMQP / LavinMQ),
+    # set username and password here.
+    if MQTT_USERNAME and MQTT_PASSWORD:
+        logger.info("Configuring MQTT auth with username=%s", MQTT_USERNAME)
+        client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+    else:
+        logger.info("Starting MQTT client WITHOUT authentication")
+
     client.on_connect = on_connect
     client.on_message = on_message
 
-    logger.info("Connecting to MQTT broker at %s:%s...", MQTT_BROKER, MQTT_PORT)
-    client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
+    logger.info(
+        "Connecting to MQTT broker at %s:%s...",
+        MQTT_BROKER_HOST,
+        MQTT_PORT,
+    )
+    client.connect(MQTT_BROKER_HOST, MQTT_PORT, keepalive=60)
 
     client.loop_forever()
 
@@ -451,28 +466,6 @@ def index():
 def health():
     """
     Backend and database health check.
-
-    ---
-    tags:
-      - System
-    responses:
-      200:
-        description: Backend and database status
-        schema:
-          type: object
-          properties:
-            status:
-              type: string
-              example: ok
-            details:
-              type: object
-              properties:
-                db:
-                  type: string
-                  example: ok
-                mqtt:
-                  type: string
-                  example: unknown
     """
     ok = True
     details: Dict[str, str] = {}
@@ -486,7 +479,7 @@ def health():
         details["db"] = "error"
         ok = False
 
-    # MQTT check (no tracking yet)
+    # MQTT check (not tracked yet, so we only report 'unknown')
     details["mqtt"] = "unknown"
 
     return jsonify({"status": "ok" if ok else "error", "details": details})
@@ -496,77 +489,6 @@ def health():
 def get_metrics():
     """
     Main system metrics.
-
-    ---
-    tags:
-      - Metrics
-    responses:
-      200:
-        description: Aggregated motion and energy metrics
-        schema:
-          type: object
-          properties:
-            totalDetections:
-              type: integer
-              example: 1234
-            activitiesToday:
-              type: integer
-              example: 42
-            detectionsByDay:
-              type: array
-              items:
-                type: integer
-              example: [42, 30, 25, 10, 5, 0, 0]
-            hourlyDistribution:
-              type: object
-              additionalProperties:
-                type: integer
-              example: {"09": 3, "10": 8, "11": 12}
-            peakHours:
-              type: string
-              example: "19h-20h"
-            sessionsToday:
-              type: object
-              properties:
-                count:
-                  type: integer
-                averageDurationSeconds:
-                  type: integer
-                maxDurationSeconds:
-                  type: integer
-            idleMetrics:
-              type: object
-              properties:
-                maxIdleSeconds:
-                  type: integer
-                lastEventAgeSeconds:
-                  type: integer
-                  nullable: true
-            energyMetrics:
-              type: object
-              properties:
-                highSecondsToday:
-                  type: integer
-                lowSecondsToday:
-                  type: integer
-                energyUsedWh:
-                  type: number
-                energySavedPercent:
-                  type: number
-            trends:
-              type: object
-              properties:
-                todayCount:
-                  type: integer
-                yesterdayCount:
-                  type: integer
-                weekAverage:
-                  type: number
-                deltaVsYesterdayPercent:
-                  type: number
-                  nullable: true
-                deltaVsWeekPercent:
-                  type: number
     """
     today = date.today()
     today_str = today.strftime("%Y-%m-%d")
@@ -670,34 +592,6 @@ def get_metrics():
 def list_events():
     """
     List recent motion events as JSON.
-
-    ---
-    tags:
-      - Events
-    parameters:
-      - name: limit
-        in: query
-        type: integer
-        required: false
-        description: Maximum number of events (default 10)
-    responses:
-      200:
-        description: List of motion events
-        schema:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: integer
-              timestamp:
-                type: integer
-              datetimeIso:
-                type: string
-              hour:
-                type: integer
-              day:
-                type: string
     """
     try:
         limit_str = request.args.get("limit", "10")
@@ -730,21 +624,6 @@ def list_events():
 def export_events_csv():
     """
     Export motion events as CSV.
-
-    ---
-    tags:
-      - Events
-    produces:
-      - text/csv
-    parameters:
-      - name: limit
-        in: query
-        type: integer
-        required: false
-        description: Maximum number of events (default 1000)
-    responses:
-      200:
-        description: CSV file with motion events
     """
     try:
         limit_str = request.args.get("limit", "1000")
