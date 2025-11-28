@@ -1,0 +1,30 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: lumos-mosquitto
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./backend/mosquitto.conf:/mosquitto/config/mosquitto.conf
+
+  backend:
+    build: ./backend
+    container_name: lumos-backend
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - mosquitto
+    environment:
+      - TZ=America/Sao_Paulo
+    ports:
+      - "5050:5050"
+    volumes:
+      - ./backend/lumos.db:/app/lumos.db
+
+  frontend:
+    build: ./frontend
+    container_name: lumos-frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
