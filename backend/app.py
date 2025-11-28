@@ -27,6 +27,12 @@ from database import (
 # Configuration
 # -----------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# Timezone offset (in hours) between server UTC time and the local time
+# Example Brazil (UTC-3) → LOCAL_TZ_OFFSET_HOURS = -3
+# --------------------------------------------------------------------------
+LOCAL_TZ_OFFSET_HOURS = int(os.getenv("LOCAL_TZ_OFFSET_HOURS", "0"))
+
 # MQTT broker (CloudMQP / LavinMQ or similar).
 # These values are provided via environment variables in Render.
 MQTT_BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "localhost")
@@ -512,13 +518,34 @@ def get_metrics():
         activities_today = detections_by_day[0]
         metrics["activitiesToday"] = activities_today
 
-        # Hourly distribution and peak hour (today)
-        hourly_distribution = get_hourly_distribution(today_str)
-        metrics["hourlyDistribution"] = hourly_distribution
+        # Hourly distribution (returned in server time → usually UTC)
+        hourly_distribution_utc = get_hourly_distribution(today_str)
 
-        peak_hour = get_peak_hour(today_str)
-        if peak_hour is not None:
-            metrics["peakHours"] = f"{peak_hour:02d}h-{(peak_hour + 1) % 24:02d}h"
+        # Convert hours from server time (UTC) to local timezone for display
+        offset = LOCAL_TZ_OFFSET_HOURS
+        hourly_distribution_local: Dict[str, int] = {}
+
+        for hour_str, count in hourly_distribution_utc.items():
+            try:
+                hour_utc = int(hour_str)
+            except (TypeError, ValueError):
+                continue
+
+            hour_local = (hour_utc + offset) % 24
+            key_local = f"{hour_local:02d}"
+            hourly_distribution_local[key_local] = (
+                hourly_distribution_local.get(key_local, 0) + count
+            )
+
+        metrics["hourlyDistribution"] = hourly_distribution_local
+
+        # Peak hour (also converted to local time)
+        peak_hour_utc = get_peak_hour(today_str)
+        if peak_hour_utc is not None:
+            peak_hour_local = (peak_hour_utc + offset) % 24
+            metrics["peakHours"] = (
+                f"{peak_hour_local:02d}h-{(peak_hour_local + 1) % 24:02d}h"
+            )
         else:
             metrics["peakHours"] = "N/A"
 
