@@ -105,7 +105,7 @@ def get_hourly_distribution(day: str) -> Dict[int, int]:
     )
     results = cursor.fetchall()
     conn.close()
-    return {row["hour"] as int: row["total"] for row in results}  # type: ignore[union-attr]
+    return {int(row["hour"]): int(row["total"]) for row in results}
 
 
 def get_peak_hour(day: str) -> Optional[int]:
