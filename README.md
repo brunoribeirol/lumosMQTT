@@ -485,13 +485,8 @@ Certifique-se de que o backend Flask esteja rodando em `http://localhost:5050` p
 
 ## 8. Como o projeto atende aos requisitos da disciplina
 
-- Microcontrolador: ESP32 usado como plataforma principal, com código em C++/Arduino e utilização de FreeRTOS tasks.
-- Sensores e atuadores: sensor PIR para presença e LED controlado por PWM para atuação visual/iluminação.
-- Comunicação: uso de Wi-Fi e protocolo MQTT para integração com servidor externo.
-- Servidor e persistência: backend em Flask conectado a um broker Mosquitto, com persistência em SQLite.
-- Métricas e análise: cálculo de sessões de presença, tempo ocioso, distribuição horária e economia de energia.
-- Interface gráfica: dashboard web dedicado, em React, apresentando métricas em tempo real.
-- Organização profissional: repositório estruturado por módulos (`esp32-esp8266`, `backend`, `frontend`, `docs`), código comentado e README detalhado.
+## Dashboard
+O dashboard exibe:
 
 ## 9. Melhorias Futuras
 
