@@ -9,8 +9,6 @@ Um **dashboard web em React** consome essas métricas e apresenta visualizaçõe
 
 O foco do projeto é mostrar, de ponta a ponta, um fluxo completo de sistemas embarcados + IoT + backend + visualização de dados.
 
----
-
 ## 1. Objetivos
 
 - Utilizar o **ESP32** como nó embarcado (sensor + atuador).
@@ -27,8 +25,6 @@ O foco do projeto é mostrar, de ponta a ponta, um fluxo completo de sistemas em
   - tempo ocioso;
   - estimativa de energia consumida e economizada.
 - Exibir todas as métricas em um **dashboard web em tempo real**.
-
----
 
 ## 2. Visão Geral do Sistema
 
@@ -65,8 +61,6 @@ Fluxo resumido:
 3. O **backend Flask** está inscrito no tópico `lumosMQTT/motion`, grava o evento no **SQLite** e recalcula métricas.
 4. O **dashboard React** consulta periodicamente `GET /api/metrics`.
 
----
-
 ## 3. Organização do Repositório
 
 Estrutura principal:
@@ -96,8 +90,6 @@ Estrutura principal:
     ├── package.json
     └── vite.config.ts
 ```
-
----
 
 ## 4. Firmware do ESP32 (esp32-esp8266/src/main.cpp)
 
@@ -234,8 +226,6 @@ PIR ready!
 [SENSOR] Motion detected. Local count: 1
 [MQTT] Publishing motion event to lumosMQTT/motion: {"timestamp": 1764283214}
 ```
-
----
 
 ## 5. Backend – Flask + MQTT + SQLite (`backend/`)
 
@@ -393,8 +383,6 @@ Saída típica:
  * Running on http://127.0.0.1:5050
 ```
 
----
-
 ## 6. Dashboard Web (`frontend/`)
 
 ![Dashboard lumosMQTT](docs/img/dashboard.png)
@@ -442,8 +430,6 @@ http://localhost:5173
 
 Certifique-se de que o backend Flask esteja rodando em `http://localhost:5050` para que as chamadas à API funcionem.
 
----
-
 ## 7. Execução End-to-End (resumo)
 
 1. Subir o **broker MQTT**
@@ -485,8 +471,13 @@ Certifique-se de que o backend Flask esteja rodando em `http://localhost:5050` p
 
 ## 8. Como o projeto atende aos requisitos da disciplina
 
-## Dashboard
-O dashboard exibe:
+- Microcontrolador: ESP32 usado como plataforma principal, com código em C++/Arduino e utilização de FreeRTOS tasks.
+- Sensores e atuadores: sensor PIR para presença e LED controlado por PWM para atuação visual/iluminação.
+- Comunicação: uso de Wi-Fi e protocolo MQTT para integração com servidor externo.
+- Servidor e persistência: backend em Flask conectado a um broker Mosquitto, com persistência em SQLite.
+- Métricas e análise: cálculo de sessões de presença, tempo ocioso, distribuição horária e economia de energia.
+- Interface gráfica: dashboard web dedicado, em React, apresentando métricas em tempo real.
+- Organização profissional: repositório estruturado por módulos (`esp32-esp8266`, `backend`, `frontend`, `docs`), código comentado e README detalhado.
 
 ## 9. Melhorias Futuras
 
