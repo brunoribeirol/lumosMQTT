@@ -4,10 +4,11 @@ import os
 import threading
 import time
 from datetime import date, datetime, timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request, Response
 from flask_cors import CORS
+from flasgger import Swagger
 import paho.mqtt.client as mqtt
 
 from database import (
@@ -19,21 +20,17 @@ from database import (
     get_total_count,
     get_events_for_day,
     get_daily_counts_for_range,
+    get_events,
 )
 
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
 
-# MQTT broker (Mosquitto)
-
-# # IPv4
-# MQTT_BROKER = os.getenv("MQTT_BROKER", "0.0.0.0")
-# MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
-
-# IPv6 (default)
-MQTT_BROKER = os.getenv("MQTT_BROKER", "::1")
-MQTT_PORT = int(os.getenv("MQTT_PORT", "1884"))
+# MQTT broker (Mosquitto).
+# Default for local dev; Docker overrides via env (mosquitto, 1883).
+MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 
 # Topic used by the ESP32 to send motion events
 MQTT_TOPIC_MOTION = os.getenv("MQTT_TOPIC_MOTION", "lumosMQTT/motion")
@@ -53,8 +50,11 @@ SESSION_GAP_SECONDS = 120
 # Logging setup
 # -----------------------------------------------------------------------------
 
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+numeric_level = getattr(logging, LOG_LEVEL, logging.INFO)
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=numeric_level,
     format="[%(asctime)s] [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("lumosMQTT-backend")
@@ -87,7 +87,7 @@ def handle_motion_message(payload_str: str) -> None:
     For analytics we use the server time as canonical timestamp.
     The device timestamp is kept only for logging purposes.
     """
-    device_timestamp = None
+    device_timestamp: Optional[int] = None
 
     try:
         if payload_str.strip():
@@ -148,7 +148,7 @@ def start_mqtt_client() -> None:
 # -----------------------------------------------------------------------------
 
 
-def _get_day_bounds(day: date, is_today: bool) -> (int, int):
+def _get_day_bounds(day: date, is_today: bool) -> Tuple[int, int]:
     """
     Return (start_ts, end_ts) in Unix seconds for the given day.
 
@@ -230,7 +230,7 @@ def compute_idle_metrics_for_day(day: date) -> Dict[str, Any]:
             # From midnight until now
             start_ts, end_ts = _get_day_bounds(day, is_today=True)
             max_idle = end_ts - start_ts
-            last_age = None
+            last_age: Optional[int] = None
         else:
             # Full day idle
             max_idle = 24 * 3600
@@ -434,9 +434,9 @@ def compute_trends(today: date) -> Dict[str, Any]:
 # Flask application
 # -----------------------------------------------------------------------------
 
-
 app = Flask(__name__, template_folder="templates", static_folder="static")
 CORS(app, resources={r"/api/*": {"origins": "*"}})
+swagger = Swagger(app)
 
 
 @app.route("/")
@@ -447,36 +447,126 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/api/health", methods=["GET"])
+def health():
+    """
+    Backend and database health check.
+
+    ---
+    tags:
+      - System
+    responses:
+      200:
+        description: Backend and database status
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: ok
+            details:
+              type: object
+              properties:
+                db:
+                  type: string
+                  example: ok
+                mqtt:
+                  type: string
+                  example: unknown
+    """
+    ok = True
+    details: Dict[str, str] = {}
+
+    # Simple DB check
+    try:
+        _ = get_total_count()
+        details["db"] = "ok"
+    except Exception as exc:
+        logger.exception("Error checking DB in /api/health: %s", exc)
+        details["db"] = "error"
+        ok = False
+
+    # MQTT check (no tracking yet)
+    details["mqtt"] = "unknown"
+
+    return jsonify({"status": "ok" if ok else "error", "details": details})
+
+
 @app.route("/api/metrics", methods=["GET"])
 def get_metrics():
     """
-    Return a rich set of metrics, all computed from the SQLite database:
+    Main system metrics.
 
-    - totalDetections      -> total number of events (all time)
-    - activitiesToday      -> number of events for today
-    - detectionsByDay      -> last 7 days [today, yesterday, ...]
-    - hourlyDistribution   -> distribution by hour for today
-    - peakHours            -> hour range with the most events today
-
-    Plus advanced analytics:
-    - sessionsToday
-        * count
-        * averageDurationSeconds
-        * maxDurationSeconds
-    - idleMetrics
-        * maxIdleSeconds
-        * lastEventAgeSeconds
-    - energyMetrics
-        * highSecondsToday
-        * lowSecondsToday
-        * energyUsedWh
-        * energySavedPercent
-    - trends
-        * todayCount
-        * yesterdayCount
-        * weekAverage
-        * deltaVsYesterdayPercent
-        * deltaVsWeekPercent
+    ---
+    tags:
+      - Metrics
+    responses:
+      200:
+        description: Aggregated motion and energy metrics
+        schema:
+          type: object
+          properties:
+            totalDetections:
+              type: integer
+              example: 1234
+            activitiesToday:
+              type: integer
+              example: 42
+            detectionsByDay:
+              type: array
+              items:
+                type: integer
+              example: [42, 30, 25, 10, 5, 0, 0]
+            hourlyDistribution:
+              type: object
+              additionalProperties:
+                type: integer
+              example: {"09": 3, "10": 8, "11": 12}
+            peakHours:
+              type: string
+              example: "19h-20h"
+            sessionsToday:
+              type: object
+              properties:
+                count:
+                  type: integer
+                averageDurationSeconds:
+                  type: integer
+                maxDurationSeconds:
+                  type: integer
+            idleMetrics:
+              type: object
+              properties:
+                maxIdleSeconds:
+                  type: integer
+                lastEventAgeSeconds:
+                  type: integer
+                  nullable: true
+            energyMetrics:
+              type: object
+              properties:
+                highSecondsToday:
+                  type: integer
+                lowSecondsToday:
+                  type: integer
+                energyUsedWh:
+                  type: number
+                energySavedPercent:
+                  type: number
+            trends:
+              type: object
+              properties:
+                todayCount:
+                  type: integer
+                yesterdayCount:
+                  type: integer
+                weekAverage:
+                  type: number
+                deltaVsYesterdayPercent:
+                  type: number
+                  nullable: true
+                deltaVsWeekPercent:
+                  type: number
     """
     today = date.today()
     today_str = today.strftime("%Y-%m-%d")
@@ -519,12 +609,12 @@ def get_metrics():
             max_duration = max(durations)
         else:
             count_sessions = 0
-            avg_duration = 0.0
-            max_duration = 0.0
+            avg_duration = 0
+            max_duration = 0
 
         metrics["sessionsToday"] = {
             "count": count_sessions,
-            "averageDurationSeconds": round(avg_duration, 2),
+            "averageDurationSeconds": int(round(avg_duration)),
             "maxDurationSeconds": int(max_duration),
         }
 
@@ -551,7 +641,7 @@ def get_metrics():
             "hourlyDistribution": {},
             "sessionsToday": {
                 "count": 0,
-                "averageDurationSeconds": 0.0,
+                "averageDurationSeconds": 0,
                 "maxDurationSeconds": 0,
             },
             "idleMetrics": {
@@ -576,6 +666,110 @@ def get_metrics():
     return jsonify(metrics)
 
 
+@app.route("/api/events", methods=["GET"])
+def list_events():
+    """
+    List recent motion events as JSON.
+
+    ---
+    tags:
+      - Events
+    parameters:
+      - name: limit
+        in: query
+        type: integer
+        required: false
+        description: Maximum number of events (default 10)
+    responses:
+      200:
+        description: List of motion events
+        schema:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              timestamp:
+                type: integer
+              datetimeIso:
+                type: string
+              hour:
+                type: integer
+              day:
+                type: string
+    """
+    try:
+        limit_str = request.args.get("limit", "10")
+        limit = int(limit_str)
+
+        rows = get_events(limit=limit)
+        events: List[Dict[str, Any]] = []
+
+        for row in rows:
+            ts = int(row["timestamp"])
+            dt_iso = datetime.fromtimestamp(ts).isoformat()
+            events.append(
+                {
+                    "id": row["id"],
+                    "timestamp": ts,
+                    "datetimeIso": dt_iso,
+                    "hour": row["hour"],
+                    "day": row["day"],
+                }
+            )
+
+        return jsonify(events)
+
+    except Exception as exc:
+        logger.exception("Error listing events: %s", exc)
+        return jsonify({"error": "Failed to list events"}), 500
+
+
+@app.route("/api/events/export", methods=["GET"])
+def export_events_csv():
+    """
+    Export motion events as CSV.
+
+    ---
+    tags:
+      - Events
+    produces:
+      - text/csv
+    parameters:
+      - name: limit
+        in: query
+        type: integer
+        required: false
+        description: Maximum number of events (default 1000)
+    responses:
+      200:
+        description: CSV file with motion events
+    """
+    try:
+        limit_str = request.args.get("limit", "1000")
+        limit = int(limit_str)
+        rows = get_events(limit=limit)
+
+        def generate():
+            yield "id,timestamp,datetime_iso,hour,day\n"
+            for row in rows:
+                ts = int(row["timestamp"])
+                dt_iso = datetime.fromtimestamp(ts).isoformat()
+                line = f'{row["id"]},{ts},{dt_iso},{row["hour"]},{row["day"]}\n'
+                yield line
+
+        return Response(
+            generate(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=motion_events.csv"},
+        )
+
+    except Exception as exc:
+        logger.exception("Error exporting events CSV: %s", exc)
+        return jsonify({"error": "Failed to export CSV"}), 500
+
+
 # -----------------------------------------------------------------------------
 # Application entry point
 # -----------------------------------------------------------------------------
@@ -598,7 +792,7 @@ if __name__ == "__main__":
         run_mqtt_in_background()
 
     host = "0.0.0.0"
-    port = 5050
+    port = int(os.environ.get("PORT", "5050"))
 
     logger.info("Starting Flask app on %s:%s ...", host, port)
     app.run(host=host, port=port, debug=True)

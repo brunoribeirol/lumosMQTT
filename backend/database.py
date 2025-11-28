@@ -1,14 +1,17 @@
+import os
 import sqlite3
 from datetime import datetime
+from typing import Dict, List, Optional
 
-DB_NAME = "motion.db"
+# Use env var in Docker and local file when running directly
+DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "lumos.db"))
 
 
-def get_connection():
+def get_connection() -> sqlite3.Connection:
     """
     Create and return a SQLite connection with row_factory set to Row.
     """
-    conn = sqlite3.connect(DB_NAME, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -83,7 +86,7 @@ def get_total_count() -> int:
     return total
 
 
-def get_hourly_distribution(day: str) -> dict:
+def get_hourly_distribution(day: str) -> Dict[int, int]:
     """
     Return a dict {hour: count} representing how many events occurred
     at each hour of a given day (YYYY-MM-DD).
@@ -102,10 +105,10 @@ def get_hourly_distribution(day: str) -> dict:
     )
     results = cursor.fetchall()
     conn.close()
-    return {row["hour"]: row["total"] for row in results}
+    return {row["hour"] as int: row["total"] for row in results}  # type: ignore[union-attr]
 
 
-def get_peak_hour(day: str):
+def get_peak_hour(day: str) -> Optional[int]:
     """
     Return the hour (0-23) with the highest number of events for a given day,
     or None if there are no events on that day.
@@ -117,7 +120,7 @@ def get_peak_hour(day: str):
     return peak
 
 
-def get_events_for_day(day: str):
+def get_events_for_day(day: str) -> List[sqlite3.Row]:
     """
     Return all events for a given day (YYYY-MM-DD),
     ordered by timestamp ascending.
@@ -139,7 +142,7 @@ def get_events_for_day(day: str):
     return rows
 
 
-def get_daily_counts_for_range(start_day: str, end_day: str) -> dict:
+def get_daily_counts_for_range(start_day: str, end_day: str) -> Dict[str, int]:
     """
     Return a dict {day_str: count} with the number of events per day
     in the inclusive range [start_day, end_day], where the dates are
@@ -160,3 +163,28 @@ def get_daily_counts_for_range(start_day: str, end_day: str) -> dict:
     rows = cursor.fetchall()
     conn.close()
     return {row["day"]: row["total"] for row in rows}
+
+
+def get_events(limit: Optional[int] = None) -> List[sqlite3.Row]:
+    """
+    Return recent motion events ordered by timestamp DESC.
+
+    :param limit: Optional maximum number of events.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    query = """
+        SELECT id, timestamp, hour, day
+        FROM motion_events
+        ORDER BY timestamp DESC
+    """
+    params: tuple = ()
+    if limit is not None:
+        query += " LIMIT ?"
+        params = (limit,)
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
