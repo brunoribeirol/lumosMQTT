@@ -35,7 +35,11 @@ LOCAL_TZ_OFFSET_HOURS = int(os.getenv("LOCAL_TZ_OFFSET_HOURS", "0"))
 
 # MQTT broker (CloudMQP / LavinMQ or similar).
 # These values are provided via environment variables in Render.
-MQTT_BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "localhost")
+MQTT_BROKER_HOST = (
+    os.getenv("MQTT_BROKER_HOST")
+    or os.getenv("MQTT_BROKER")
+    or "localhost"
+)
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USERNAME = os.getenv("MQTT_USERNAME")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
