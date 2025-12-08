@@ -1,428 +1,673 @@
-
-# lumosMQTT – Smart Presence-Based Lighting with ESP32, MQTT and Flask
+# 🌱 lumosMQTT – Smart Presence-Based Lighting
 
 > Embedded Systems Project – CESAR School  
-> Professors: Bella Nunes • Jymmy Barreto  
+> Professors: Bella Nunes • Jymmy Barreto
 
-lumosMQTT is an IoT system that monitors room occupancy using an ESP32 and a PIR motion sensor, controls the lighting based on presence, and sends all events to a Raspberry Pi via MQTT.  
-On the Raspberry Pi, a Python + Flask backend stores the events in SQLite and exposes a real-time dashboard and analytics API.
+**lumosMQTT** is an IoT system that monitors presence using an **ESP32 + PIR sensor** and controls LED brightness via PWM to save energy.  
+Each detection generates an event sent via **MQTT** to a **Flask** backend, which stores the data in **SQLite** and exposes an API with metrics.  
+A **React web dashboard** consumes these metrics and presents real-time visualizations.
 
-The goal is to reduce energy consumption in indoor environments (classrooms, labs, offices) through presence-based lighting with data-driven insights.
-
----
+The project's focus is to demonstrate, end-to-end, a complete flow of embedded systems + IoT + backend + data visualization.
 
 ## 1. Objectives
 
-- Use **ESP32** as a smart sensor/actuator node (presence + LED control).
-- Use **Wi‑Fi + MQTT** to send motion events to a central server (Raspberry Pi).
-- Provide a **web dashboard** with real-time metrics and historical analysis.
-- Persist all events in a **relational database (SQLite)** for analytics.
-- Demonstrate **energy savings** and **usage patterns** based on presence data.
-
----
+- Use the **ESP32** as an embedded node (sensor + actuator).
+- Detect motion using a **PIR sensor**.
+- Control the LED via **PWM**, with:
+  - **high brightness** mode when there's recent motion;
+  - **low brightness (energy-saving)** mode when the environment is idle.
+- Send compact events via **MQTT** in JSON format.
+- Persist events in a **SQLite database** and calculate advanced metrics:
+  - total detections;
+  - daily activities;
+  - hourly distribution;
+  - presence sessions;
+  - idle time;
+  - estimation of consumed and saved energy.
+- Display all metrics on a **real-time web dashboard**.
 
 ## 2. System Overview
 
-High-level architecture:
+### Architecture
 
 ```text
-[ PIR Sensor ]        [ LED ]
-      │                 ▲
-      │                 │ PWM (brightness)
-      ▼                 │
-   [ ESP32 ] -- Wi‑Fi --> [ MQTT Broker (Mosquitto) ] <---> [ Flask Backend ]
-                                                │
-                                                ▼
-                                         [ SQLite (motion.db) ]
-                                                │
-                                                ▼
-                                        [ Web Dashboard (HTML/JS) ]
+[ PIR Sensor ]        [ LED PWM ]
+       │                    ▲
+       ▼                    │
+   ┌───────────┐     ┌──────┴──────┐
+   │   ESP32   │     │   Mosquitto │
+   │ (C++/RTOS)├────►│   MQTT      │
+   └───────────┘ Wi-Fi└──────┬──────┘
+                             │
+                             ▼
+                     ┌──────────────────┐
+                     │ Flask Backend    │
+                     │ + SQLite         │
+                     └───────┬──────────┘
+                             │ REST `/api/metrics`
+                             ▼
+                     ┌──────────────────┐
+                     │ React Dashboard  │
+                     └──────────────────┘
 ```
 
-Main data flow:
+Summary flow:
 
-1. The ESP32 reads the PIR sensor (GPIO 27) and controls the LED brightness (GPIO 4 via PWM) using a motion window of 3 seconds.
-2. On each **new motion detection**, the ESP32:
-   - Updates the LED to high brightness for a short period.
-   - Builds a JSON payload `{"timestamp": <epoch_seconds>}` (NTP-synchronized when available).
-   - Publishes the message to the MQTT topic `lumosMQTT/motion`.
-3. The **Raspberry Pi** (or any server) runs Mosquitto (MQTT broker) and the Flask backend:
-   - Subscribes to `lumosMQTT/motion`.
-   - Stores each event in `motion.db` (table `motion_events`).
-   - Computes metrics (daily counts, sessions, idle time, energy estimates, etc.).
-   - Exposes the dashboard (`/`) and a JSON API (`/api/metrics`).
+1. **ESP32** reads the PIR sensor (GPIO 27) in a dedicated FreeRTOS task.
+2. When a rising edge occurs (LOW → HIGH), the firmware:
+   - increments a local counter;
+   - publishes a JSON with the **timestamp** to the `lumosMQTT/motion` topic;
+   - updates the LED brightness (GPIO 4, PWM).
+3. The **Flask backend** subscribes to the `lumosMQTT/motion` topic, stores the event in **SQLite**, and recalculates metrics.
+4. The **React dashboard** periodically queries `GET /api/metrics`.
 
----
+## 3. Repository Organization
 
-## 3. Features
+Main structure:
 
-### 3.1 ESP32 Firmware
-
-- Motion detection with **PIR sensor** on `PIN_PIR = 27`.
-- **Adaptive LED brightness** on `PIN_LED = 4` using PWM (`ledcWrite`):
-  - High brightness when motion was detected in the last `MOTION_WINDOW_MS = 3000` ms.
-  - Low brightness for energy saving when idle.
-- Wi‑Fi station mode with credentials injected via **compile-time macros** (`WIFI_SSID`, `WIFI_PASSWORD`).
-- Time synchronization via **NTP** with graceful fallback to `millis()` if NTP fails.
-- MQTT client (PubSubClient) with:
-  - Connection and reconnection logic.
-  - Publishing of motion events as compact JSON.
-  - Subscription to a command topic (prepared for future expansions).
-
-### 3.2 Backend & Dashboard
-
-- **Flask** application exposing:
-  - `GET /` – main HTML dashboard (real-time visualization).
-  - `GET /api/metrics` – JSON API with all computed metrics.
-- **SQLite** database (`motion.db`) to persist all events with:
-  - `timestamp` (Unix seconds), `hour` (0–23), `day` (`YYYY-MM-DD`).
-- Analytics computed from the database:
-  - `totalDetections` – total number of motion events (all time).
-  - `activitiesToday` – number of events today.
-  - `detectionsByDay` – last 7 days, from today backwards.
-  - `hourlyDistribution` – number of events per hour for today.
-  - `peakHours` – hour range with the highest activity today (e.g. `19h-20h`).
-  - **Sessions**:
-    - `sessionsToday.count`
-    - `sessionsToday.averageDurationSeconds`
-    - `sessionsToday.maxDurationSeconds`
-  - **Idle metrics**:
-    - `idleMetrics.maxIdleSeconds` – longest interval without motion today.
-    - `idleMetrics.lastEventAgeSeconds` – time since the last event (for today).
-  - **Energy metrics** (estimated from LED high/low periods):
-    - `energyMetrics.highSecondsToday`
-    - `energyMetrics.lowSecondsToday`
-    - `energyMetrics.energyUsedWh`
-    - `energyMetrics.energySavedPercent` (vs. always-high LED).
-  - **Trends** (7-day window):
-    - `trends.todayCount`
-    - `trends.yesterdayCount`
-    - `trends.weekAverage`
-    - `trends.deltaVsYesterdayPercent`
-    - `trends.deltaVsWeekPercent`.
-
----
-
-## 4. Architecture & Technologies
-
-### 4.1 Hardware
-
-- 1× ESP32 DevKit (NodeMCU-style).
-- 1× PIR motion sensor (e.g., HC‑SR501).
-- 1× LED + appropriate resistor.
-- Jumper wires and breadboard.
-- 1× Raspberry Pi (or any Linux machine) running:
-  - Mosquitto (MQTT broker).
-  - Python + Flask backend.
-
-### 4.2 Software & Libraries
-
-- **ESP32 firmware**
-  - PlatformIO + Arduino framework.
-  - `WiFi.h`, `PubSubClient.h`.
-  - FreeRTOS tasks (`xTaskCreate`, `vTaskDelay`).
-
-- **Backend & dashboard**
-  - Python 3.10+.
-  - Flask, Flask‑CORS.
-  - paho‑mqtt.
-  - SQLite3.
-
-- **MQTT Broker**
-  - Mosquitto (IPv4 or IPv6).
-
----
-
-## 5. Repository Structure
-
-The repository follows the suggested structure for the Embedded Systems project, adapted to this implementation:
-
-```text
+```bash
 .
-├── README.md               # Project documentation (this file)
-├── docs/                   # Report (ABNT2) + diagrams and screenshots
-├── raspberry-pi/           # Flask backend + MQTT client + database utilities
-│   ├── app.py              # Flask application + MQTT thread + metrics API
-│   ├── database.py         # SQLite access layer (motion_events)
-│   ├── templates/
-│   │   └── index.html      # Dashboard HTML
-│   └── static/             # CSS, JS, charts, assets
-├── esp32-esp8266/          # ESP32 firmware (PlatformIO project)
-│   ├── src/
-│   │   └── main.cpp        # Motion + LED + MQTT + NTP
-│   ├── include/
-│   │   └── env.h           # Topic macros (MQTT, Wi‑Fi via build_flags)
-│   └── platformio.ini      # Board, libraries, Wi‑Fi & MQTT configuration
-└── schematics/             # Circuit diagrams (Fritzing/KiCad or similar)
+├── README.md                         # Portuguese version (PT-BR)
+├── README_EN.md                      # This file (EN)
+├── docker-compose.yml                # Orchestrates mosquitto + backend + frontend
+├── schematics/                       # Eletronic Diagrams
+├── docs/
+│   ├── projeto-embarcados.pdf        # Course scope/description
+│   ├── pitch.pdf                     # Pitch
+│   ├── Projeto_IoT_Grupo12.pdf       # Report
+│   └── img/
+│       ├── dashboard.png             # Dashboard screenshot
+│       └── dashboard2.png            # Dashboard screenshot (variant)
+├── esp32-esp8266/                    # ESP32 firmware (PlatformIO)
+│   ├── src/main.cpp
+│   ├── include/env.h
+│   ├── platformio.example.ini        # Template without credentials
+│   └── platformio.ini                # Local file created from example (not versioned)
+├── backend/                          # Flask + MQTT + SQLite backend
+│   ├── app.py
+│   ├── database.py
+│   ├── mosquitto.conf
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   ├── .env.example                  # Backend configuration template
+│   └── templates/index.html          # (optional; not the main dashboard)
+└── frontend/                         # React + Vite + Tailwind web dashboard
+    ├── src/
+    │   ├── App.tsx
+    │   ├── pages/
+    │   └── components/
+    ├── package.json
+    ├── vite.config.ts
+    ├── Dockerfile
+    └── .env.example                  # Template with VITE_API_BASE_URL
 ```
 
-> Note: Folder names may be adjusted to match the actual repository layout, but the README is written to follow this logical separation.
+## 4. ESP32 Firmware (esp32-esp8266/src/main.cpp)
 
----
+### Hardware
 
-## 6. ESP32 Firmware
+- PIR sensor: GPIO 27
+- LED (high brightness): GPIO 4
+- PWM configured with:
 
-### 6.1 Behavior
+  ```cpp
+  static const int PIN_PIR = 27;
+  static const int PIN_LED = 4;
 
-- Reads the PIR sensor on `PIN_PIR = 27` periodically in a FreeRTOS task (`taskSensors`).
-- Maintains a **motion window** (`MOTION_WINDOW_MS = 3000` ms).  
-  If any motion is detected during this window, the LED remains in high brightness.
-- Uses PWM on `PIN_LED = 4` with:
-  - Channel: `LEDC_CHANNEL = 0`
-  - Frequency: `LEDC_FREQUENCY = 5000` Hz
-  - Resolution: `LEDC_RESOLUTION = 8` bits
-  - `BRIGHT_HIGH = 255`, `BRIGHT_LOW = 60`
-- Connects to Wi‑Fi using `WIFI_SSID` and `WIFI_PASSWORD` (provided by `build_flags`).
-- Configures NTP time (`configTime`) and waits up to 10 seconds for synchronization.
-- On motion **rising edge** (LOW → HIGH):
-  - Increments a local motion counter (for serial debug).
-  - Builds JSON via `buildMotionEventJson()`:
-    ```json
-    { "timestamp": 1732708465 }
-    ```
-    - Uses real NTP time when synchronized.
-    - Falls back to `millis()/1000` if NTP is not available.
-  - Publishes this JSON to the MQTT topic defined as `TOPIC_MOTION` in `env.h`:
-    ```c
-    #define TOPIC_STATUS "lumosMQTT/status"
-    #define TOPIC_MOTION "lumosMQTT/motion"
-    ```
-- Maintains MQTT connection in the `loop()` function and automatically reconnects when needed.
+  static const int LEDC_CHANNEL    = 0;
+  static const int LEDC_FREQUENCY  = 5000; // 5 kHz
+  static const int LEDC_RESOLUTION = 8;    // 0–255
 
-### 6.2 Configuration (`platformio.ini`)
+  static const uint8_t BRIGHT_HIGH = 255;
+  static const uint8_t BRIGHT_LOW  = 60;
+  static const unsigned long MOTION_WINDOW_MS = 3000; // 3 s
+  ```
 
-Example configuration:
+### Behavior
 
-```ini
-[env:esp32dev]
-platform = espressif32
-board = esp32dev
-framework = arduino
+- There's a FreeRTOS task `(taskSensors)` that, every ~300 ms:
+  - reads the PIR state;
+  - detects rising edge (LOW → HIGH);
+  - sends MQTT event;
+  - updates `lastMotionMillis`;
+  - calls `updateLedBrightness()`, which decides between `BRIGHT_HIGH` and `BRIGHT_LOW` based on the 3-second motion window.
+- The `loop()` function keeps the MQTT client alive `(mqttClient.loop())` and reconnects if necessary.
 
-monitor_speed = 115200
+### Wi-Fi Connection
 
-lib_deps =
-    knolleary/PubSubClient @ ^2.8
+#### `platformio.ini` file and credentials
 
-build_flags =
-    -DWIFI_SSID="<YourNetworkSSID>"
-    -DWIFI_PASSWORD="<YourNetworkPassword>"
-    -DMQTT_SERVER_ADDR="<MQTT_BROKER_IP_OR_HOST>"
-    -DMQTT_SERVER_PORT=<MQTT_BROKER_PORT>
+For security reasons, the actual **`platformio.ini` file is not versioned in the repository** (it's in `.gitignore`), as it contains sensitive data such as:
+
+- `WIFI_SSID`
+- `WIFI_PASSWORD`
+- MQTT broker address (`MQTT_SERVER_ADDR` and `MQTT_SERVER_PORT`)
+
+Instead, the repository includes a template file:
+
+- `esp32-esp8266/platformio.example.ini`
+
+To compile the project on another machine, follow these steps:
+
+1. Copy the example file:
+
+```bash
+  cp esp32-esp8266/platformio.example.ini esp32-esp8266/platformio.ini
 ```
 
-Replace the values with your own Wi‑Fi and MQTT broker settings.
+2. Edit the new `platformio.ini` and fill in:
+   - `WIFI_SSID` and `WIFI_PASSWORD` with your Wi-Fi network name and password;
+   - `MQTT_SERVER_ADDR` with the **IP address of the machine running Mosquitto**.  
+      You can discover your local IP with:
+     ```bash
+     ip addr show
+     ```
+     or, on compatible distros:
+     ```bash
+     hostname -I
+     ```
+     or alternatively:
+     ```bash
+     ifconfig
+     ```
+   - `MQTT_SERVER_PORT` with the broker port (default `1883`).
 
-### 6.3 How to Flash the ESP32 (PlatformIO)
+> **Important:** The ESP32 **only connects to 2.4 GHz Wi-Fi networks**.  
+> If the network is 5 GHz only, the device won't be able to connect.
 
-1. Install **PlatformIO** (VS Code extension or CLI).
-2. Clone this repository and open the `esp32-esp8266/` folder as a PlatformIO project.
-3. Adjust `platformio.ini` with your Wi‑Fi and MQTT settings.
-4. Connect the ESP32 via USB.
-5. Build and upload:
+### NTP
 
-   ```bash
-   pio run
-   pio run --target upload
-   ```
+The code uses:
 
-6. Open the serial monitor to confirm Wi‑Fi and MQTT connection:
+```cpp
+configTime(-3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+```
 
-   ```bash
-   pio device monitor
-   ```
+- If NTP synchronizes, the real timestamp (epoch) is used.
+- If it doesn't synchronize, there's a fallback to `millis()/1000`.
 
----
+### MQTT
 
-## 7. Backend & Dashboard (Raspberry Pi)
+Topics defined in `include/env.h`:
 
-### 7.1 Database Schema
+```cpp
+#define TOPIC_STATUS "lumosMQTT/status"
+#define TOPIC_MOTION "lumosMQTT/motion"
+```
 
-The backend uses a single table `motion_events` in `motion.db`:
+Actual usage:
+
+- Upon connecting, the ESP32 publishes `status = "online"` to `TOPIC_STATUS`.
+- For each new detection, it publishes an event to `TOPIC_MOTION`.
+
+### Published payload
+
+The ESP32 doesn't send aggregated metrics, only the raw event:
+
+```json
+{ "timestamp": 1732708465 }
+```
+
+Everything else (counts, sessions, energy, trends) is calculated in the backend.
+
+### Build and upload
+
+In the `esp32-esp8266/` folder:
+
+```bash
+# Compile
+pio run
+
+# Compile and upload to ESP32
+pio run --target upload
+
+# Serial monitor
+pio device monitor
+```
+
+Typical output:
+
+```text
+[WiFi] Connected.
+[WiFi] IP: 192.168.15.72
+[TIME] NTP time synchronized!
+[MQTT] Connecting to broker... connected.
+System initialized. Waiting ~20s for PIR stabilization...
+PIR ready!
+[SENSOR] Motion detected. Local count: 1
+[MQTT] Publishing motion event to lumosMQTT/motion: {"timestamp": 1764283214}
+```
+
+## 5. Backend – Flask + MQTT + SQLite (`backend/`)
+
+### MQTT Broker (Mosquitto)
+
+`backend/mosquitto.conf` file:
+
+```conf
+# IPv4 – for ESP32 (local network)
+listener 1883 0.0.0.0
+allow_anonymous true
+
+# IPv6 – for Flask backend (localhost)
+listener 1884 ::
+allow_anonymous true
+```
+
+#### Scenario 1 - All local (without Docker)
+
+- ESP32 connects to `MQTT_SERVER_ADDR:MQTT_SERVER_PORT` (e.g., `192.168.15.29:1883`).
+- Flask backend, by default, can connect to `::1:1884` (localhost IPv6) using:
+
+```bash
+    export MQTT_BROKER="::1"
+    export MQTT_PORT=1884
+    export MQTT_TOPIC_MOTION="lumosMQTT/motion"
+```
+
+In the `backend/` folder:
+
+```bash
+mosquitto -c mosquitto.conf
+```
+
+#### Scenario 2 - Stack with Docker Compose (recommended)
+
+When using the `docker-compose.yml` from the root:
+
+- The `mosquitto` service exposes port `1883` to the host.
+- The `backend` service is configured via `backend/.env` to use:
+
+```env
+    MQTT_BROKER=mosquitto
+    MQTT_PORT=1883
+    MQTT_TOPIC_MOTION=lumosMQTT/motion
+```
+
+In other words, within the Docker network, the backend communicates with the broker via the hostname `mosquitto:1883`.
+
+### Database
+
+`database.py` file:
+
+- The backend uses an SQLite file configured via the `DB_PATH` environment variable.
+
+Example configuration in `.env` (inside the container):
+
+```env
+  DB_PATH=/app/lumos.db
+```
+
+In `docker-compose.yml`, the file is mapped from the host to the container, for example:
+
+```yaml
+volumes:
+  - ./backend/lumos.db:/app/lumos.db
+```
+
+Main table:
 
 ```sql
 CREATE TABLE IF NOT EXISTS motion_events (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp INTEGER NOT NULL,
     hour      INTEGER NOT NULL,
-    day       TEXT    NOT NULL
+    day       TEXT NOT NULL
 );
 ```
 
-Each MQTT message from the ESP32 is translated into one row with:
+Main functions:
 
-- `timestamp` – Unix seconds when the event was stored on the server.
-- `hour` – hour of the event (0–23).
-- `day` – string in the format `YYYY-MM-DD`.
+- `insert_motion_event(timestamp)`
+- `get_daily_count(day)`
+- `get_total_count()`
+- `get_hourly_distribution(day)`
+- `get_peak_hour(day)`
+- `get_events_for_day(day)`
+- `get_daily_counts_for_range(start_day, end_day)`
 
-### 7.2 MQTT Integration
+### Environment variables (backend/.env)
 
-- The backend uses `paho-mqtt` to connect to the broker.
-- On successful connection, it subscribes to the motion topic:
+The backend reads configuration from a `.env` file in the `backend/` folder.
 
-  ```python
-  MQTT_TOPIC_MOTION = os.getenv("MQTT_TOPIC_MOTION", "lumosMQTT/motion")
-  ```
-
-- For each message received:
-  - Tries to parse the payload as JSON and extract `"timestamp"` (device time).
-  - Uses **server time** (`time.time()`) as canonical timestamp for the database.
-  - Stores the event in `motion_events`.
-  - Logs both server timestamp and device timestamp for debugging.
-
-### 7.3 Flask Application
-
-Key endpoints:
-
-#### `GET /`
-
-- Renders `templates/index.html`.
-- The dashboard loads metrics from `/api/metrics` periodically via JavaScript.
-- Displays cards and charts such as:
-  - Total detections.
-  - Detections in the last 7 days.
-  - Hourly distribution.
-  - Energy saved percentage.
-  - Peak usage hours.
-
-#### `GET /api/metrics`
-
-- Returns a JSON object with all computed metrics. Example (simplified):
-
-  ```json
-  {
-    "totalDetections": 92,
-    "activitiesToday": 92,
-    "detectionsByDay": [92, 0, 0, 0, 0, 0, 0],
-    "hourlyDistribution": { "18": 34, "19": 52, "20": 6 },
-    "peakHours": "19h-20h",
-    "sessionsToday": {
-      "count": 14,
-      "averageDurationSeconds": 162.64,
-      "maxDurationSeconds": 492
-    },
-    "idleMetrics": {
-      "maxIdleSeconds": 67297,
-      "lastEventAgeSeconds": 58
-    },
-    "energyMetrics": {
-      "highSecondsToday": 275,
-      "lowSecondsToday": 72177,
-      "energyUsedWh": 10.2538,
-      "energySavedPercent": 83.02
-    },
-    "trends": {
-      "todayCount": 92,
-      "yesterdayCount": 0,
-      "weekAverage": 13.14,
-      "deltaVsYesterdayPercent": null,
-      "deltaVsWeekPercent": 600.0
-    }
-  }
-  ```
-
-### 7.4 Environment Variables
-
-The backend supports configuration via environment variables:
-
-- `MQTT_BROKER` – MQTT broker host (default: `"::1"` for IPv6 localhost).
-- `MQTT_PORT` – MQTT broker port (default: `1884`).
-- `MQTT_TOPIC_MOTION` – MQTT topic for motion events (default: `"lumosMQTT/motion"`).
-
-You can also use an IPv4 configuration, for example:
+The repository includes a template:
 
 ```bash
-export MQTT_BROKER="192.168.15.29"
-export MQTT_PORT=1883
+cp backend/.env.example backend/.env
 ```
 
-### 7.5 Running the Backend
+Main variables:
 
-Assuming you are in the `raspberry-pi/` folder:
+```env
+# MQTT
+MQTT_BROKER=mosquitto        # service name in Docker Compose
+MQTT_PORT=1883
+MQTT_TOPIC_MOTION=lumosMQTT/motion
 
-1. Create and activate a virtual environment (recommended):
+# Database (SQLite file inside the container)
+DB_PATH=/app/lumos.db
 
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # Linux/macOS
-   # .venv\Scripts\activate  # Windows (PowerShell)
-   ```
+# Logging
+LOG_LEVEL=INFO
 
-2. Install dependencies (example):
+# HTTP Port
+PORT=5050
+```
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+When running with Docker Compose, these values are used automatically.
+To run locally (without Docker), you can adjust `MQTT_BROKER` to the IP/host where Mosquitto is running.
 
-   The `requirements.txt` file should include at least:
-   - `Flask`
-   - `Flask-Cors`
-   - `paho-mqtt`
+### MQTT client in the backend (app.py)
 
-3. Initialize the database and start the Flask application:
+- Configurable connection via environment variables:
 
-   ```bash
-   export MQTT_BROKER="::1"      # or your broker IP
-   export MQTT_PORT=1884         # or 1883 for IPv4
-   python app.py
-   ```
+```bash
+# Example (using IPv6 localhost and port 1884)
+export MQTT_BROKER="::1"
+export MQTT_PORT=1884
+export MQTT_TOPIC_MOTION="lumosMQTT/motion"
+```
 
-4. Access the dashboard in a browser:
+- In `on_connect`, the client subscribes to `MQTT_TOPIC_MOTION`.
+- Each received message goes through `handle_motion_message(payload_str)`:
+  - reads the `timestamp` sent by the ESP32 (for logging only);
+  - records the server time (current epoch);
+  - inserts the event into the `motion_events` table.
 
-   ```text
-   http://<raspberry-pi-ip>:5050/
-   ```
+### Metrics exposed by the API
 
-   Example on the Pi itself: `http://localhost:5050/`
+The `GET /api/metrics` route calculates various indicators directly from the database for the current day:
 
-The MQTT client is started in a **background thread** so that Flask and the broker integration run in parallel.
+- `totalDetections`: total events in the entire database.
+- `detectionsByDay`: list of the last 7 days `[today, yesterday, ...]`.
+- `activitiesToday`: today's count (first element of `detectionsByDay`).
+- `hourlyDistribution`: map `{hour: count}` for today (0–23).
+- `peakHours`: interval `"19h-20h"` with highest activity.
 
----
+More advanced derived metrics:
 
-## 8. How to Run the Full System (End-to-End)
+- `sessionsToday`:
+  - `count`: number of presence sessions (grouping events with gap ≤ 120s);
+  - `averageDurationSeconds`;
+  - `maxDurationSeconds`.
+- `idleMetrics`:
+  - `maxIdleSeconds`: longest period without motion;
+  - `lastEventAgeSeconds`: seconds since the last event (for today).
+- `energyMetrics` (reconstruction of high brightness windows):
+  - `highSecondsToday` and `lowSecondsToday`;
+  - `energyUsedWh`;
+  - `energySavedPercent` (compared to staying always at high brightness).
+- `trends`:
+  - `todayCount`, `yesterdayCount`, `weekAverage`;
+  - `deltaVsYesterdayPercent`;
+  - `deltaVsWeekPercent`.
 
-1. **Start the MQTT broker (Mosquitto)** on the Raspberry Pi:
-   - Configure it to listen on IPv4 and/or IPv6 as needed.
-   - Ensure the port matches `MQTT_SERVER_PORT` on the ESP32 and `MQTT_PORT` in the backend.
+Real response example:
 
-2. **Start the Flask backend** (`app.py`) with proper environment variables.
+```json
+{
+  "activitiesToday": 92,
+  "detectionsByDay": [92, 0, 0, 0, 0, 0, 0],
+  "energyMetrics": {
+    "energySavedPercent": 83.02,
+    "energyUsedWh": 10.2538,
+    "highSecondsToday": 275,
+    "lowSecondsToday": 72177
+  },
+  "hourlyDistribution": { "18": 34, "19": 52, "20": 6 },
+  "idleMetrics": {
+    "lastEventAgeSeconds": 58,
+    "maxIdleSeconds": 67297
+  },
+  "peakHours": "19h-20h",
+  "sessionsToday": {
+    "averageDurationSeconds": 162.64,
+    "count": 14,
+    "maxDurationSeconds": 492
+  },
+  "totalDetections": 92,
+  "trends": {
+    "deltaVsWeekPercent": 600.0,
+    "deltaVsYesterdayPercent": null,
+    "todayCount": 92,
+    "weekAverage": 13.14,
+    "yesterdayCount": 0
+  }
+}
+```
 
-3. **Flash and start the ESP32 firmware**:
-   - Ensure `WIFI_SSID` and `WIFI_PASSWORD` allow the ESP32 to reach the broker.
-   - Ensure `MQTT_SERVER_ADDR` points to the broker’s IP (or hostname).
+### Other useful endpoints
 
-4. **Open the dashboard** in a browser and move in front of the PIR sensor:
-   - You should see the metrics update in near real time.
-   - The LED will switch between high and low brightness according to motion.
+Besides `/api/metrics`, the backend exposes:
 
----
+- `GET /api/health`
 
-## 9. How This Project Meets the Course Requirements
+  - Returns the basic status of the backend and database. Useful for health checks.
 
-- **ESP32 as sensor/actuator node**: motion detection and LED control are implemented in the firmware.
-- **MQTT communication**: the system uses Mosquitto as broker, with the ESP32 publishing JSON messages and the backend subscribing to the motion topic.
-- **Wi‑Fi connectivity**: ESP32 connects to a 2.4 GHz network using credentials set via `build_flags`.
-- **Dashboard in real time**: Flask + HTML/JS dashboard visualizes metrics based on live data from the database.
-- **Data persistence**: all events are stored in SQLite (`motion.db`), enabling historical analysis and trends.
-- **FreeRTOS** usage: the ESP32 firmware uses tasks and delays from FreeRTOS, following the project’s embedded systems context.
-- **GitHub organization**: repository structure, README, documentation and code separation are aligned with the course’s expectations.
+- `GET /api/events?limit=N`
 
----
+  - Lists the most recent motion events, ordered from newest to oldest.
+  - Used by the dashboard to populate the Recent Events table.
+
+- `GET /api/events/export?limit=N`
+  - Exports events in CSV format (`text/csv`), allowing download of history for external analysis.
+
+### Running the backend (without Docker)
+
+In the `backend/` folder:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate        # Linux/macOS
+# venv\Scripts\activate         # Windows
+
+pip install -r requirements.txt
+
+cp .env.example .env            # create configuration file
+# edit .env if necessary (MQTT_BROKER, DB_PATH, etc.)
+
+python app.py
+```
+
+Typical output:
+
+```text
+[INFO] lumosMQTT-backend: Connecting to MQTT broker at ::1:1884...
+[INFO] lumosMQTT-backend: Connected to MQTT broker ::1:1884
+[INFO] lumosMQTT-backend: Subscribed to motion topic: lumosMQTT/motion
+ * Running on http://127.0.0.1:5050
+```
+
+## 6. Web Dashboard (`frontend/`)
+
+![lumosMQTT Dashboard – overview](docs/img/dashboard.png)
+![lumosMQTT Dashboard – events table and details](docs/img/dashboard2.png)
+
+The dashboard is a SPA in **React + Vite + TypeScript + Tailwind**, with modern visuals (cards, charts, dark/light theme).
+
+It consumes the backend API:
+
+```ts
+GET http://localhost:5050/api/metrics
+GET http://localhost:5050/api/events
+GET http://localhost:5050/api/events/export
+GET http://localhost:5050/api/health
+```
+
+### Environment Variables (`frontend/.env`)
+
+The frontend reads the base API URL from the `.env` file in the `frontend/` folder.
+
+```bash
+cp frontend/.env.example frontend/.env
+```
+
+Default content:
+
+```env
+VITE_API_BASE_URL=http://localhost:5050
+```
+
+If you run the backend on another URL/port or in a production environment, just adjust this value.
+
+### Main components
+
+- **Header**:
+  - System title, connection status (`Online/Offline`) based on `/api/health`;
+  - Displays the last metrics update;
+  - Theme toggle button (light/dark) with persistence in `localStorage` and application to the `<html>` tag (`class="dark"`).
+- **Summary cards**:
+  - Total detections;
+  - Activities today;
+  - Energy saved;
+  - Sessions today;
+  - Peak hours;
+  - Idle time since last detection.
+- **Charts (Recharts)**:
+  - Detections by day (last 7 days);
+  - Hourly distribution for today (bar chart);
+  - Trends vs yesterday and vs weekly average.
+- **Trends**:
+  - Cards showing:
+    - Detections today;
+    - Weekly average;
+    - Percentage difference vs yesterday;
+    - Percentage difference vs weekly average.
+- **Recent events table**:
+  - Lists the latest motion events directly from `GET /api/events`;
+  - Displays id, time (formatted in `pt-BR`), and raw timestamp;
+  - Includes buttons to export history:
+  - Export JSON: downloads `motion_events.json` with raw data;
+  - Export CSV: downloads `motion_events.csv` ready to open in Excel/Sheets.
+
+### How to run (without Docker)
+
+In the `frontend/` folder:
+
+```bash
+# Install dependencies
+npm install      # or pnpm install / bun install
+
+# Run in development mode
+npm run dev
+```
+
+Vite typically starts on port `5173` (or similar).
+
+In the browser, access:
+
+```text
+http://localhost:5173
+```
+
+Make sure the Flask backend is running on `http://localhost:5050` and that `VITE_API_BASE_URL` in .env points to that URL.
+
+## 7. Execution with Docker (recommended)
+
+The repository includes a `docker-compose.yml` at the root that brings up the entire stack:
+
+- `mosquitto` – MQTT broker;
+- `lumos-backend` – Flask backend + SQLite;
+- `lumos-frontend` – React dashboard served by Nginx.
+
+At the project root:
+
+```bash
+docker compose build
+docker compose up
+## or
+docker-compose up --build
+```
+
+Services and ports:
+
+- Mosquitto (MQTT): `localhost:1883`
+- Flask Backend: `http://localhost:5050`
+- Frontend (Nginx + React build): `http://localhost:5173`
+
+Access the dashboard at:
+
+```text
+http://localhost:5173
+```
+
+Before running for the first time:
+
+```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+```
+
+> Make sure the ESP32 is configured to point `MQTT_SERVER_ADDR` to the IP address of the machine where Docker is running (port `1883`).
+
+## 8. End-to-End Execution (manual mode, without Docker)
+
+1. Start the **MQTT broker**
+   - In the `backend/` folder:
+
+```bash
+    mosquitto -c mosquitto.conf
+```
+
+2. Start the **Flask backend**
+
+```bash
+  cd backend
+  python3 -m venv venv
+  source venv/bin/activate         # Linux/macOS
+  # venv\Scripts\activate          # Windows
+
+  cp .env.example .env             # if it doesn't exist yet
+  # edit .env if necessary (MQTT_BROKER, DB_PATH, etc.)
+
+  python app.py
+```
+
+3. Start the **dashboard**
+
+```bash
+  cd frontend
+  cp .env.example .env             # ensure VITE_API_BASE_URL is correct
+  npm install
+  npm run dev
+
+```
+
+4. Turn on the ESP32
+
+   - Make sure `MQTT_SERVER_ADDR` in `platformio.ini` points to the IP of the machine with Mosquitto.
+   - Upload the firmware and monitor the serial output.
+
+5. Generate motion
+
+- Move in front of the PIR sensor.
+- Observe:
+  - logs in the ESP32 Serial;
+  - `Stored motion event...` lines in the backend;
+  - real-time updates in the dashboard.
+
+## 9. How the project meets the course requirements
+
+- **Microcontroller**: ESP32 used as the main platform, with C++/Arduino code and FreeRTOS tasks.
+- **Sensors and actuators**: PIR sensor for presence and LED controlled by PWM for visual/lighting actuation.
+- **Communication**: use of Wi-Fi and MQTT protocol for integration with external server.
+- **Server and persistence**: Flask backend connected to a Mosquitto broker, with SQLite persistence.
+- **Metrics and analysis**: calculation of presence sessions, idle time, hourly distribution, and energy savings.
+- **Graphical interface**: dedicated web dashboard in React, presenting real-time metrics.
+- **Professional organization**: repository structured by modules (`esp32-esp8266`, `backend`, `frontend`, `docs`), commented code, use of `.env/.env.example`, Dockerfiles, and detailed README.
 
 ## 10. Future Improvements
 
-Some ideas for next iterations:
-
-- Add **additional sensors** (e.g., ambient light, temperature) to correlate presence with context.
-- Integrate **notifications** (e-mail, messaging apps) for after-hours movement.
-- Implement **role-based access** on the dashboard (admin vs. viewer).
-- Export data to **CSV/JSON** for external analysis (e.g., in Jupyter/BI tools).
-- Integrate with **Node-RED** or other visualization tools for more complex flows.
-- Add **configuration endpoints** to adjust parameters (motion window, thresholds, etc.) via API.
-
----
+- Add a light sensor (LDR) to combine presence + ambient light.
+- Create alerts (email, Telegram, etc.) for activity outside of hours.
+- Implement MQTT authentication (username/password, TLS) for production environment.
+- Improve event history with filters by date/time range in the API and dashboard (CSV/JSON export is already available in the current version).
+- Allow remote parameter adjustment (motion window, brightness, session limits).
+- Create a "web flasher" for the ESP32 (via ESP Web Flasher or esptool.py + script) allowing firmware flashing directly from the browser.
 
 ## 11. License
 
-This is an academic project developed for the Embedded Systems course at CESAR School.  
-You may reuse and adapt the code for educational purposes, giving proper credit to the authors and the institution.
+This project is licensed under the terms of the MIT license – see the [LICENSE](LICENSE) file for more details.
+
+- Academic project developed for the Embedded Systems course at CESAR School.
+- The code can be reused for educational purposes, with proper credits to the authors.

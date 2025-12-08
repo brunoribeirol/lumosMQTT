@@ -67,28 +67,32 @@ Estrutura principal:
 
 ```bash
 .
-├── README.md                  # Este arquivo (PT-BR)
-├── README_EN.md               # Versão em inglês
-├── docker-compose.yml         # Orquestra mosquitto + backend + frontend
+├── README.md                         # Este arquivo (PT-BR)
+├── README_EN.md                      # Versão em inglês
+├── docker-compose.yml                # Orquestra mosquitto + backend + frontend
+├── schematics/                       # Diagramas eletrônicos
+│   ├── eletronic-diagram.png
 ├── docs/
-│   ├── projeto-embarcados.pdf # Escopo/descrição fornecida na disciplina
+│   ├── projeto-embarcados.pdf        # Escopo/descrição fornecida na disciplina
+│   ├── pitch.pdf                     # Pitch apresentação
+│   ├── Projeto_IoT_Grupo12.pdf       # Relatório
 │   └── img/
-│       ├── dashboard.png      # Screenshot do dashboard
-│       └── dashboard2.png     # Screenshot do dashboard (variação)
-├── esp32-esp8266/             # Firmware do ESP32 (PlatformIO)
+│       ├── dashboard.png             # Screenshot do dashboard
+│       └── dashboard2.png            # Screenshot do dashboard (variação)
+├── esp32-esp8266/                    # Firmware do ESP32 (PlatformIO)
 │   ├── src/main.cpp
 │   ├── include/env.h
-│   ├── platformio.example.ini # Modelo sem credenciais
-│   └── platformio.ini         # Arquivo local criado a partir do exemplo (não versionado)
-├── backend/                   # Backend Flask + MQTT + SQLite
+│   ├── platformio.example.ini        # Modelo sem credenciais
+│   └── platformio.ini                # Arquivo local criado a partir do exemplo (não versionado)
+├── backend/                          # Backend Flask + MQTT + SQLite
 │   ├── app.py
 │   ├── database.py
 │   ├── mosquitto.conf
 │   ├── requirements.txt
 │   ├── Dockerfile
-│   ├── .env.example           # Modelo de configuração do backend
-│   └── templates/index.html   # (opcional; não é o dashboard principal)
-└── frontend/                  # Dashboard web em React + Vite + Tailwind
+│   ├── .env.example                  # Modelo de configuração do backend
+│   └── templates/index.html          # (opcional; não é o dashboard principal)
+└── frontend/                         # Dashboard web em React + Vite + Tailwind
     ├── src/
     │   ├── App.tsx
     │   ├── pages/
@@ -96,7 +100,7 @@ Estrutura principal:
     ├── package.json
     ├── vite.config.ts
     ├── Dockerfile
-    └── .env.example           # Modelo com VITE_API_BASE_URL
+    └── .env.example                  # Modelo com VITE_API_BASE_URL
 ```
 
 ## 4. Firmware do ESP32 (esp32-esp8266/src/main.cpp)
