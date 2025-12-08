@@ -111,8 +111,10 @@ void connectMQTT() {
         String clientId = "lumosMQTT-esp32-";
         clientId += String(random(0xFFFF), HEX);
 
-        // CloudAMQP/LavinMQ: precisa de usuário e senha
-        if (mqttClient.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
+        // CloudAMQP/LavinMQ: needs user and password
+        // if (mqttClient.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
+        // Local (Mosquitto)    
+        if (mqttClient.connect(clientId.c_str())) {
             Serial.println("[MQTT] Connected.");
             mqttClient.subscribe(TOPIC_COMMANDS);
             mqttClient.publish(TOPIC_STATUS, "online", true);
